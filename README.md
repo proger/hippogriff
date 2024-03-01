@@ -6,3 +6,5 @@ Dependencies:
 ```
 pip install torch accelerated-scan
 ```
+
+Please visit my accelerated-scan project: https://github.com/proger/accelerated-scan
