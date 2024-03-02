@@ -16,9 +16,9 @@ class Hawk(nn.Module):
         self.output = nn.Linear(hidden, dim, bias=False)
 
         with torch.no_grad():
-            self.input.weight.normal_(1/dim**0.5)
-            self.gates.weight.normal_(1/hidden**0.5)
-            self.output.weight.normal_(1/hidden**0.5)
+            self.input.weight.normal_(std=1/dim**0.5)
+            self.gates.weight.normal_(std=1/hidden**0.5)
+            self.output.weight.normal_(std=1/hidden**0.5)
 
     def forward(self, x):
         _N, T, _C = x.shape
