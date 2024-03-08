@@ -9,3 +9,4 @@ This repository implements Hawk and Griffin blocks from [Griffin: Mixing Gated L
 pip install hippogriff
 ```
 
+![hippogriff](hippogriff.png)
