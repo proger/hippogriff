@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hippogriff"
+dynamic = ["version"]
+dependencies = [
+  "torch>=2.1",
+  "accelerated-scan",
+  "flash-attn>=2.3",
+]
+authors = [
+  { name="Volodymyr Kyrylov", email="vol@wilab.org.ua" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+requires-python = ">= 3.8"
+license = {file = "LICENSE"}
+readme = "README.md"
+
+[tool.hatch.version]
+path = "hippogriff.py"

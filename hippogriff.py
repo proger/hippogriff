@@ -1,3 +1,5 @@
+__version__ = '0.0.1'
+
 from dataclasses import dataclass
 import torch
 import torch.nn as nn

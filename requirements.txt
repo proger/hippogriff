@@ -1,2 +1,0 @@
-accelerated-scan
-flash-attn>=2.3
