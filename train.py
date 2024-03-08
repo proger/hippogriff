@@ -24,6 +24,7 @@ torch.backends.cudnn.allow_tf32 = True
 class Formatter(argparse.ArgumentDefaultsHelpFormatter, argparse.MetavarTypeHelpFormatter): pass
 parser = argparse.ArgumentParser("train", formatter_class=Formatter)
 parser.add_argument('--exp', type=Template, default='exp', help="path to experiment directory (with substitution of $lr)")
+parser.add_argument('--data', type=str, default='enwik8', help="collection of datasets to use for training, see classmethods in train_tapes.py for selection")
 parser.add_argument('--lr', type=float, default=25e-5, help="learning rate")
 parser.add_argument('--until', type=int, required=False, help="truncate run after this many steps")
 parser.add_argument('--max_checkpoints', type=int, default=10, help="keep only the last n checkpoints")
@@ -185,7 +186,7 @@ if __name__ == '__main__':
     with open(args.exp / 'run', 'a') as f:
         print(*sys.argv, file=f)
 
-    tapes = Tapes.enwik8(args)
+    tapes = getattr(Tapes, args.data)(args)
     model = make_model(tapes.vocab_size, seq_len=tapes.seq_len, args=args)
     opt = torch.optim.AdamW(model.parameter_groups(), lr=args.lr, betas=(0.9, 0.999), fused=False)
 
