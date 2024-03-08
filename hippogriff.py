@@ -150,7 +150,7 @@ class GriffinLM(nn.Module):
     def parameter_groups(self):
         return [
             {'params': self.embedding.parameters()},
-            {'params': self.griffin.parameters()},
+            {'params': self.backbone.parameters()},
         ]
 
     def forward(self, input_ids):
