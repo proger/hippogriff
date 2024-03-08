@@ -11,16 +11,16 @@ from flash_attn.layers.rotary import RotaryEmbedding
 
 @dataclass
 class GriffinConfig:
-    vocab_size = 256
-    num_layers = 1
-    dim = 1024
-    smqa_head_dim = 128
-    smqa_q_heads = 8
-    smqa_kv_heads = 1
-    smqa_window_size = 512
-    hawk_expansion_factor = 1.5
-    hawk_kernel_size = 4
-    gmlp_expansion_factor = 2
+    vocab_size: int = 256
+    num_layers: int = 1
+    dim: int = 1024
+    smqa_head_dim: int = 128
+    smqa_q_heads: int = 8
+    smqa_kv_heads: int = 1
+    smqa_window_size: int = 512
+    hawk_expansion_factor: float = 1.5
+    hawk_kernel_size: int = 4
+    gmlp_expansion_factor: float = 2
 
 
 class RMSNorm(nn.Module):
@@ -30,7 +30,7 @@ class RMSNorm(nn.Module):
         self.gamma = nn.Parameter(torch.ones(dim))
 
     def forward(self, x):
-        x = x / x.norm(p=2, dim=-1, keepdim=True).clamp(min=1e-6)
+        x = x / x.norm(p=2, dim=-1, keepdim=True)
         return self.gamma / self.scale * x
 
 
@@ -123,10 +123,10 @@ class Griffin(nn.Module):
         self.smqa_gmlp = GatedMLP(dim=config.dim, expansion_factor=config.gmlp_expansion_factor)
 
     def forward(self, x):
-        x += self.hawk(self.hawk_norm(x))
-        x += self.hawk_gmlp(self.hawk_gmlp_norm(x))
-        x += self.smqa(self.smqa_norm(x))
-        x += self.smqa_gmlp(self.smqa_gmlp_norm(x))
+        x = x + self.hawk(self.hawk_norm(x))
+        x = x + self.hawk_gmlp(self.hawk_gmlp_norm(x))
+        x = x + self.smqa(self.smqa_norm(x))
+        x = x + self.smqa_gmlp(self.smqa_gmlp_norm(x))
         return x
 
 
@@ -151,7 +151,6 @@ class GriffinLM(nn.Module):
         return [
             {'params': self.input.parameters()},
             {'params': self.griffin.parameters()},
-            {'params': self.output.parameters()}
         ]
 
     def forward(self, input_ids):
