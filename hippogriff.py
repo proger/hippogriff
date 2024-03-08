@@ -147,10 +147,13 @@ class GriffinLM(nn.Module):
     def tie_weights_(self):
         self.lm_head.weight = self.embedding.weight
 
-    def parameter_groups(self):
+    def parameter_groups(self, weight_decay=1e-2):
         return [
-            {'params': self.embedding.parameters()},
-            {'params': self.backbone.parameters()},
+            {'params': self.embedding.parameters(), 'weight_decay': 0.0}, # lm_head is tied here
+            # do not decay biases and single-column parameters (forget_base, rmsnorm), those are usually scales
+            {'params': (p for p in self.backbone.parameters() if p.dim() < 2), 'weight_decay': 0.0},
+            {'params': (p for p in self.backbone.parameters() if p.dim() >= 2), 'weight_decay': weight_decay},
+            {'params': self.output_norm.parameters(), 'weight_decay': 0.0},
         ]
 
     def forward(self, input_ids):
