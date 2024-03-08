@@ -133,31 +133,31 @@ class Griffin(nn.Module):
 class GriffinLM(nn.Module):
     def __init__(self, config: GriffinConfig):
         super().__init__()
-        self.input = nn.Embedding(config.vocab_size, config.dim)
-        self.griffin = nn.ModuleList([Griffin(config) for _ in range(config.num_layers)])
+        self.embedding = nn.Embedding(config.vocab_size, config.dim)
+        self.backbone = nn.ModuleList([Griffin(config) for _ in range(config.num_layers)])
         self.output_norm = RMSNorm(dim=config.dim)
-        self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
+        self.lm_head = nn.Linear(config.dim, config.vocab_size, bias=False)
 
         with torch.no_grad():
-            self.input.weight.normal_(std=config.dim**-0.5)
-            self.output.weight.normal_(std=config.dim**-0.5)
+            self.embedding.weight.normal_(std=config.dim**-0.5)
+            self.lm_head.weight.normal_(std=config.dim**-0.5)
 
         self.tie_weights_()
 
     def tie_weights_(self):
-        self.output.weight = self.input.weight
+        self.lm_head.weight = self.embedding.weight
 
     def parameter_groups(self):
         return [
-            {'params': self.input.parameters()},
+            {'params': self.embedding.parameters()},
             {'params': self.griffin.parameters()},
         ]
 
     def forward(self, input_ids):
-        x = self.input(input_ids)
-        for block in self.griffin:
+        x = self.embedding(input_ids)
+        for block in self.backbone:
             x = block(x)
-        x = self.output(self.output_norm(x))
+        x = self.lm_head(self.output_norm(x))
         return x
 
         
