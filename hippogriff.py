@@ -58,7 +58,7 @@ class Hawk(nn.Module):
         # RG-LRU: linear recurrent unit with input-dependent gating
         forget, input = self.gates(x).chunk(2, dim=-1)
         alpha = (-8 * softplus(self.forget_base) * forget.sigmoid()).exp()
-        beta = (1 - alpha**2).sqrt()
+        beta = (1 - alpha**2 + 1e-6).sqrt()
         x = beta * input.sigmoid() * x
 
         h = scan(alpha.mT.contiguous(), x.mT.contiguous()).mT
