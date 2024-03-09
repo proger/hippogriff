@@ -36,9 +36,12 @@ parser.add_argument('--steps', type=int, default=100000, help="number of trainin
 parser.add_argument('--init', type=Path, help="load model weights from this checkpoint")
 parser.add_argument('--seed', type=int, default=-1, help="random seed for the train data tape, defaults to sequential sampling when negative")
 parser.add_argument('--batch_size', type=int, default=32, help="batch size")
+parser.add_argument('--log_interval', type=int, default=100, help="log every n steps")
 parser.add_argument('--eval_interval', type=int, default=1000, help="evaluate every n steps")
+parser.add_argument('--anomaly', type=str, choices=['auto', 'active', 'ignore'], default='auto', help="when to detect and break on anomalies: auto (default) enables anomaly detection only when a nan gradient is detected, active enables anomaly detection for all steps, ignore disables anomaly detection.")
 
-device = 'cuda' # use CUDA_VISIBLE_DEVICES to choose the device until accelerated-scan supports cuda:1
+device = 'cuda' # use CUDA_VISIBLE_DEVICES to choose the device until accelerated-scan supports cuda:N
+dtype = torch.bfloat16 # torch.float16
 
 
 def make_model(vocab_size, *, args, seq_len=512):
@@ -76,11 +79,11 @@ def evaluate(model, batches) -> tuple[float, dict]:
 
 
 def train(model, tapes, opt, *, args):
-    #torch.autograd.set_detect_anomaly(True)
+    torch.autograd.set_detect_anomaly(args.anomaly == 'active')
     model.train()
     opt.zero_grad(set_to_none=True)
 
-    scaler = torch.cuda.amp.GradScaler(enabled=True)
+    scaler = torch.cuda.amp.GradScaler(enabled=dtype==torch.float16)
     step_tokens, total_tokens = 0, 0
 
     step = 0
@@ -99,7 +102,7 @@ def train(model, tapes, opt, *, args):
         for accumulation_step in range(0, args.accumulate):
             step_tokens += targets.numel()
             input_ids, targets = tapes.train[step]
-            with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+            with torch.amp.autocast(device_type='cuda', dtype=dtype):
                 logits = model(input_ids)
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1)).mean()
 
@@ -107,6 +110,18 @@ def train(model, tapes, opt, *, args):
 
         scaler.unscale_(opt)
         grad_norm = torch.nn.utils.clip_grad.clip_grad_norm_(model.parameters(), 0.25)
+        isnan_grad_norm = torch.isnan(grad_norm).any()
+    
+        if isnan_grad_norm and args.anomaly == 'auto':
+            print('step', step, 'has a nan gradient, retrying with anomaly detector')
+            summarize_gradients(model)
+            opt.zero_grad(set_to_none=True)
+            assert not len(summarize_gradients(model)), "some model parameters still have gradients after opt.zero_grad, check your optimizer parameter coverage"
+            with torch.autograd.set_detect_anomaly(True):
+                with torch.amp.autocast(device_type='cuda', dtype=dtype):
+                    logits = model(input_ids)
+                    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1)).mean()
+                scaler.scale(loss).backward()
 
         if step < warmup_steps:
             # linear warmup
@@ -123,18 +138,22 @@ def train(model, tapes, opt, *, args):
 
         scaler.step(opt)
         scaler.update()
-        if step % args.eval_interval == 0:
+
+        diag = {}
+
+        #if step % args.log_interval == 0 or isnan_grad_norm:
+        if step % args.eval_interval == 0 or isnan_grad_norm:
             diag.update(summarize_gradients(model))
             diag.update(print_weights(model, full=True))
             # summarize optimizer updates?
 
         opt.zero_grad(set_to_none=True)
 
-        diag = {}
-        if step < 100 or step % 100 == 0:
+        if step < 100 or step % args.log_interval == 0:
             then = time.monotonic()
             total_tokens += step_tokens
-            print(f'{step:6} steps, {total_tokens:9} tokens, {loss:.4f} xent, {loss/np.log(2):.4f} bpc,',
+            scaler_info = f'{scaler.get_scale()} scale, ' if scaler.is_enabled() else ''
+            print(f'{step:6} steps, {total_tokens:9} tokens, {loss:.4f} xent, {scaler_info}{loss/np.log(2):.4f} bpc,',
                     f'{current_lr:.5f} lr,',
                     f'{grad_norm:.4f} grad norm, {then-now:.4f} elapsed, {step_tokens/(then-now):.2f} tok/s', flush=True)
             diag.update({
@@ -144,6 +163,7 @@ def train(model, tapes, opt, *, args):
                 'train/grad_norm': grad_norm,
                 'train/tps': step_tokens/(then-now),
                 'train/total_tokens': total_tokens,
+                **{'train/scaler_' + k: v for k, v in scaler.state_dict().items()}
             })
             now = then
             step_tokens = 0
