@@ -215,17 +215,18 @@ if __name__ == '__main__':
 
     train(model, tapes, opt, args=args)
 
-    step = 'final'
-    print('testing', flush=True)
-    test_loss, _ = evaluate(model, tapes.test)
-    print(f'final test {test_loss:.3f}', f'bpc {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
-    eval_loss, _ = evaluate(model, tqdm(tapes.valid))
-    print(f'final evaluate {eval_loss:.3f}', f'bpc {eval_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+    if False:
+        step = 'final'
+        print('testing', flush=True)
+        test_loss, _ = evaluate(model, tapes.test)
+        print(f'final test {test_loss:.3f}', f'bpc {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+        eval_loss, _ = evaluate(model, tqdm(tapes.valid))
+        print(f'final evaluate {eval_loss:.3f}', f'bpc {eval_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
 
-    if wandb.run is not None:
-        wandb.log({
-            'final/eval/loss': eval_loss,
-            'final/eval/bpc': eval_loss / np.log(2),
-            'final/test/loss': test_loss,
-            'final/test/bpc': test_loss / np.log(2),
-        })
+        if wandb.run is not None:
+            wandb.log({
+                'final/eval/loss': eval_loss,
+                'final/eval/bpc': eval_loss / np.log(2),
+                'final/test/loss': test_loss,
+                'final/test/bpc': test_loss / np.log(2),
+            })
