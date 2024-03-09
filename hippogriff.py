@@ -42,7 +42,7 @@ class Hawk(nn.Module):
         self.conv = nn.Conv1d(in_channels=hidden, out_channels=hidden, bias=True,
                               kernel_size=kernel_size, groups=hidden, padding=kernel_size-1)
         self.gates = nn.Linear(hidden, 2*hidden, bias=True)
-        self.forget_base = nn.Parameter(torch.linspace(-6.7, -10.5, hidden))
+        self.forget_base = nn.Parameter(torch.linspace(-4.323, -9, hidden))
         self.output = nn.Linear(hidden, dim, bias=False)
 
         with torch.no_grad():
