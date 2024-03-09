@@ -157,12 +157,13 @@ def train(model, tapes, opt, *, args):
                 'eval/loss': eval_loss,
                 'eval/bpc': eval_loss / np.log(2),
             })
-            test_loss, _ = evaluate(model, tapes.test)
-            print(f'test {test_loss:.3f}', f'bpc {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
-            diag.update({
-                'test/loss': test_loss,
-                'test/bpc': test_loss / np.log(2),
-            })
+            if False:
+                test_loss, _ = evaluate(model, tapes.test)
+                print(f'test {test_loss:.3f}', f'bpc {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+                diag.update({
+                    'test/loss': test_loss,
+                    'test/bpc': test_loss / np.log(2),
+                })
             model.train()
 
         if diag and wandb.run is not None:
