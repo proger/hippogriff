@@ -33,7 +33,6 @@ parser.add_argument('--accumulate', type=int, default=1, help="accumulate gradie
 parser.add_argument('--cooldown', type=str, choices=['linear', 'cosine'], default='linear', help="learning rate cooldown schedule")
 parser.add_argument('--warmup', type=int, default=0, help="warmup steps")
 parser.add_argument('--steps', type=int, default=100000, help="number of training steps")
-parser.add_argument('--n_layers', type=int, help="number of layers")
 parser.add_argument('--init', type=Path, help="load model weights from this checkpoint")
 parser.add_argument('--seed', type=int, default=-1, help="random seed for the train data tape, defaults to sequential sampling when negative")
 parser.add_argument('--batch_size', type=int, default=32, help="batch size")
@@ -43,37 +42,37 @@ device = 'cuda' # use CUDA_VISIBLE_DEVICES to choose the device until accelerate
 
 
 def make_model(vocab_size, *, args, seq_len=512):
-  torch.manual_seed(1337)
+    torch.manual_seed(1337)
 
-  config = GriffinConfig(vocab_size=vocab_size)
-  model = GriffinLM(config).to(device)
+    config = GriffinConfig(vocab_size=vocab_size)
+    model = GriffinLM(config).to(device)
 
-  if args.init:
-    load_checkpoint(args.init, model=model, strict=False)
+    if args.init:
+        load_checkpoint(args.init, model=model, strict=False)
 
-  print(model)
-  print(f'entropy {np.log(config.vocab_size):.3f}')
-  return model
+    print(model)
+    print(f'entropy {np.log(config.vocab_size):.3f}')
+    return model
 
 
 @torch.inference_mode()
 def evaluate(model, batches) -> tuple[float, dict]:
-  model.eval()
-  losses = []
-  diag = {}
-  for i, (input_ids, targets) in enumerate(batches):
-    with summarize_activations(model, infix=['input', 'output'], verbose=i==0) as batch_diag:
-      with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
-      #with nullcontext():
-        logits = model(input_ids)
-        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1)).mean()
+    model.eval()
+    losses = []
+    diag = {}
+    for i, (input_ids, targets) in enumerate(batches):
+        with summarize_activations(model, infix=['input', 'output'], verbose=i==0) as batch_diag:
+            with torch.amp.autocast(device_type='cuda', dtype=dtype):
+            #with nullcontext():
+                logits = model(input_ids)
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1)).mean()
 
-      if i == 0:
-        diag.update(batch_diag)
-    losses.append(loss.item())
-    if i and i % 100 == 0:
-      print('mean bpc so far', np.mean(losses) / np.log(2))
-  return np.mean(losses), diag
+            if i == 0:
+                diag.update(batch_diag)
+        losses.append(loss.item())
+        if i and i % 100 == 0:
+            print('mean bpc so far', np.mean(losses) / np.log(2))
+    return np.mean(losses), diag
 
 
 def train(model, tapes, opt, *, args):
