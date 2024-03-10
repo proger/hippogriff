@@ -74,7 +74,7 @@ def evaluate(model, batches) -> tuple[float, dict]:
                 diag.update(batch_diag)
         losses.append(loss.item())
         if i and i % 100 == 0:
-            print('mean bpc so far', np.mean(losses) / np.log(2))
+            print('mean bpb so far', np.mean(losses) / np.log(2))
     return np.mean(losses), diag
 
 
@@ -153,12 +153,12 @@ def train(model, tapes, opt, *, args):
             then = time.monotonic()
             total_tokens += step_tokens
             scaler_info = f'{scaler.get_scale()} scale, ' if scaler.is_enabled() else ''
-            print(f'{step:6} steps, {total_tokens:9} tokens, {loss:.4f} xent, {scaler_info}{loss/np.log(2):.4f} bpc,',
+            print(f'{step:6} steps, {total_tokens:9} tokens, {loss:.4f} xent, {scaler_info}{loss/np.log(2):.4f} bpb,',
                     f'{current_lr:.5f} lr,',
                     f'{grad_norm:.4f} grad norm, {then-now:.4f} elapsed, {step_tokens/(then-now):.2f} tok/s', flush=True)
             diag.update({
                 'train/loss': loss.item(),
-                'train/bpc': loss.item() / np.log(2),
+                'train/bpb': loss.item() / np.log(2),
                 'train/lr': current_lr,
                 'train/grad_norm': grad_norm,
                 'train/tps': step_tokens/(then-now),
@@ -172,17 +172,17 @@ def train(model, tapes, opt, *, args):
             save_checkpoint(model, opt, scaler, tapes.train.generator, step, total_tokens, args)
             eval_loss, activations = evaluate(model, tapes.valid)
             diag.update(activations)
-            print(f'evaluate xent {eval_loss:.3f}', f'bpc {eval_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+            print(f'evaluate xent {eval_loss:.3f}', f'bpb {eval_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
             diag.update({
                 'eval/loss': eval_loss,
-                'eval/bpc': eval_loss / np.log(2),
+                'eval/bpb': eval_loss / np.log(2),
             })
             if False:
                 test_loss, _ = evaluate(model, tapes.test)
-                print(f'test xent {test_loss:.3f}', f'bpc {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+                print(f'test xent {test_loss:.3f}', f'bpb {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
                 diag.update({
                     'test/loss': test_loss,
-                    'test/bpc': test_loss / np.log(2),
+                    'test/bpb': test_loss / np.log(2),
                 })
             model.train()
 
@@ -219,14 +219,14 @@ if __name__ == '__main__':
         step = 'final'
         print('testing', flush=True)
         test_loss, _ = evaluate(model, tapes.test)
-        print(f'final test xent {test_loss:.3f}', f'bpc {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+        print(f'final test xent {test_loss:.3f}', f'bpb {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
         eval_loss, _ = evaluate(model, tqdm(tapes.valid))
-        print(f'final evaluate xent {eval_loss:.3f}', f'bpc {eval_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+        print(f'final evaluate xent {eval_loss:.3f}', f'bpb {eval_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
 
         if wandb.run is not None:
             wandb.log({
                 'final/eval/loss': eval_loss,
-                'final/eval/bpc': eval_loss / np.log(2),
+                'final/eval/bpb': eval_loss / np.log(2),
                 'final/test/loss': test_loss,
-                'final/test/bpc': test_loss / np.log(2),
+                'final/test/bpb': test_loss / np.log(2),
             })
