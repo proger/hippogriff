@@ -134,7 +134,8 @@ def train(model, tapes, opt, *, args):
             current_lr = lr_scale * args.lr
         else:
             current_lr = args.lr
-        opt.param_groups[0]['lr'] = current_lr
+        for param_group in opt.param_groups:
+            param_group['lr'] = current_lr
 
         scaler.step(opt)
         scaler.update()
@@ -208,7 +209,11 @@ if __name__ == '__main__':
 
     tapes = getattr(Tapes, args.data)(args)
     model = make_model(tapes.vocab_size, seq_len=tapes.seq_len, args=args)
-    opt = torch.optim.AdamW(model.parameter_groups(), lr=args.lr, betas=(0.9, 0.999), fused=False)
+    parameter_groups = model.parameter_groups()
+    opt = torch.optim.AdamW(parameter_groups, lr=args.lr, betas=(0.9, 0.999), fused=False)
+    for i, param_group in enumerate(opt.param_groups):
+        n = sum(p.numel() for p in param_group['params'])
+        print('parameter group', i, 'has', n, 'parameters')
 
     args.parameters = sum(p.numel() for p in model.parameters())
     wandb.init(project='hippogriff', config=vars(args))
