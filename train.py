@@ -10,10 +10,9 @@ import torch.nn.functional as F
 import numpy as np
 import wandb
 
-from hippogriff import GriffinLM, GriffinConfig
 from train_diagnostics import summarize_activations, print_weights, summarize_gradients
 from train_tape import Tapes
-from train_checkpoints import list_checkpoints, load_checkpoint, save_checkpoint
+from train_init import list_checkpoints, load_checkpoint, save_checkpoint, make_model
 
 
 torch.set_float32_matmul_precision('high')
@@ -42,20 +41,6 @@ parser.add_argument('--anomaly', type=str, choices=['auto', 'active', 'ignore'],
 
 device = 'cuda' # use CUDA_VISIBLE_DEVICES to choose the device until accelerated-scan supports cuda:N
 dtype = torch.bfloat16 # torch.float16
-
-
-def make_model(vocab_size, *, args, seq_len=512):
-    torch.manual_seed(1337)
-
-    config = GriffinConfig(vocab_size=vocab_size)
-    model = GriffinLM(config).to(device)
-
-    if args.init:
-        load_checkpoint(args.init, model=model, strict=False)
-
-    print(model)
-    print(f'entropy {np.log(config.vocab_size):.3f}')
-    return model
 
 
 @torch.inference_mode()
@@ -216,7 +201,7 @@ if __name__ == '__main__':
         print(*sys.argv, file=f)
 
     tapes = getattr(Tapes, args.data)(args)
-    model = make_model(tapes.vocab_size, seq_len=tapes.seq_len, args=args)
+    model = make_model(tapes.vocab_size, init=args.init, device=device)
     parameter_groups = model.parameter_groups()
     opt = torch.optim.AdamW(parameter_groups, lr=args.lr, betas=(0.9, 0.999), fused=False)
     for i, param_group in enumerate(opt.param_groups):

@@ -1,4 +1,20 @@
+import numpy as np
 import torch
+from hippogriff import GriffinLM, GriffinConfig
+
+
+def make_model(vocab_size, *, init=None, device='cuda'):
+    torch.manual_seed(1337)
+
+    config = GriffinConfig(vocab_size=vocab_size)
+    model = GriffinLM(config).to(device)
+
+    if init:
+        load_checkpoint(init, model=model, strict=False)
+
+    print(model)
+    print(f'entropy {np.log(config.vocab_size):.3f}')
+    return model
 
 
 def list_checkpoints(args):
