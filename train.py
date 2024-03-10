@@ -59,9 +59,10 @@ def make_model(vocab_size, *, args, seq_len=512):
 
 
 @torch.inference_mode()
-def evaluate(model, batches) -> tuple[float, dict]:
+def evaluate(model, batches, diag_prefix='eval') -> tuple[float, dict]:
     model.eval()
     losses = []
+    accuracy_sum, accuracy_count = 0, 0
     diag = {}
     for i, (input_ids, targets) in enumerate(batches):
         with summarize_activations(model, infix=['input', 'output'], verbose=i==0) as batch_diag:
@@ -70,12 +71,20 @@ def evaluate(model, batches) -> tuple[float, dict]:
                 logits = model(input_ids)
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1)).mean()
 
+            accuracy_sum, accuracy_count = logits.argmax(dim=-1).eq(targets).sum().item(), targets.numel()
+
             if i == 0:
                 diag.update(batch_diag)
         losses.append(loss.item())
         if i and i % 100 == 0:
-            print('mean bpb so far', np.mean(losses) / np.log(2))
-    return np.mean(losses), diag
+            bpb = np.mean(losses) / np.log(2)
+            print(f'evaluation step {i}: bpb so far {bpb:.4f}')
+    diag.update({
+        f'{diag_prefix}/accuracy': accuracy_sum / accuracy_count,
+        f'{diag_prefix}/loss': np.mean(losses),
+        f'{diag_prefix}/bpb': np.mean(losses) / np.log(2),
+    })
+    return diag
 
 
 def train(model, tapes, opt, *, args):
@@ -171,19 +180,18 @@ def train(model, tapes, opt, *, args):
 
         if step % args.eval_interval == 0:
             save_checkpoint(model, opt, scaler, tapes.train.generator, step, total_tokens, args)
-            eval_loss, activations = evaluate(model, tapes.valid)
-            diag.update(activations)
-            print(f'evaluate xent {eval_loss:.3f}', f'bpb {eval_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
-            diag.update({
-                'eval/loss': eval_loss,
-                'eval/bpb': eval_loss / np.log(2),
-            })
+            eval = evaluate(model, tapes.valid, diag_prefix='eval')
+            eval_loss, eval_bpb, eval_accuracy = eval['eval/loss'], eval['eval/bpb'], eval['eval/accuracy']
+            diag.update(eval)
+            print(f'evaluate xent {eval_loss:.3f}', f'bpb {eval_bpb:.3f}', f'accuracy {eval_accuracy:.3f}', 'after', step, 'steps', flush=True)
             if False:
-                test_loss, _ = evaluate(model, tapes.test)
-                print(f'test xent {test_loss:.3f}', f'bpb {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+                test = evaluate(model, tapes.test, diag_prefix='test')
+                test_loss, test_bpb = test['test/loss'], test['test/bpb']
+                print(f'test xent {test_loss:.3f}', f'bpb {test_bpb:.3f}', 'after', step, 'steps', flush=True)
                 diag.update({
                     'test/loss': test_loss,
-                    'test/bpb': test_loss / np.log(2),
+                    'test/bpb': test_bpb,
+                    'test/accuracy': test['test/accuracy'],
                 })
             model.train()
 
@@ -223,15 +231,17 @@ if __name__ == '__main__':
     if False:
         step = 'final'
         print('testing', flush=True)
-        test_loss, _ = evaluate(model, tapes.test)
-        print(f'final test xent {test_loss:.3f}', f'bpb {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
-        eval_loss, _ = evaluate(model, tqdm(tapes.valid))
-        print(f'final evaluate xent {eval_loss:.3f}', f'bpb {eval_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+        test = evaluate(model, tapes.test, diag_prefix='test')
+        test_loss, test_bpb = test['test/loss'], test['test/bpb']
+        print(f'final test xent {test_loss:.3f}', f'bpb {test_bpb:.3f}', 'after', step, 'steps', flush=True)
+        eval = evaluate(model, tqdm(tapes.valid), diag_prefix='eval')
+        eval_loss, eval_bpb = eval['eval/loss'], eval['eval/bpb']
+        print(f'final evaluate xent {eval_loss:.3f}', f'bpb {eval_bpb:.3f}', 'after', step, 'steps', flush=True)
 
         if wandb.run is not None:
             wandb.log({
                 'final/eval/loss': eval_loss,
-                'final/eval/bpb': eval_loss / np.log(2),
+                'final/eval/bpb': eval_bpb,
                 'final/test/loss': test_loss,
-                'final/test/bpb': test_loss / np.log(2),
+                'final/test/bpb': test_bpb,
             })
