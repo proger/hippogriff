@@ -23,9 +23,9 @@ torch.backends.cudnn.allow_tf32 = True
 
 class Formatter(argparse.ArgumentDefaultsHelpFormatter, argparse.MetavarTypeHelpFormatter): pass
 parser = argparse.ArgumentParser("train", formatter_class=Formatter)
-parser.add_argument('--exp', type=Template, default='exp', help="path to experiment directory (with substitution of $lr)")
+parser.add_argument('--exp', type=Template, default='exp', help="path to experiment directory (with substitution of other command line arguments using $lr syntax)")
 parser.add_argument('--data', type=str, default='enwik8', help="collection of datasets to use for training, see classmethods in train_tapes.py for selection")
-parser.add_argument('--lr', type=float, default=25e-5, help="learning rate")
+parser.add_argument('--lr', type=float, default=1e-3, help="learning rate")
 parser.add_argument('--until', type=int, required=False, help="truncate run after this many steps")
 parser.add_argument('--max_checkpoints', type=int, default=10, help="keep only the last n checkpoints")
 parser.add_argument('--resume', action='store_true', help="resume from checkpoint")
@@ -172,14 +172,14 @@ def train(model, tapes, opt, *, args):
             save_checkpoint(model, opt, scaler, tapes.train.generator, step, total_tokens, args)
             eval_loss, activations = evaluate(model, tapes.valid)
             diag.update(activations)
-            print(f'evaluate {eval_loss:.3f}', f'bpc {eval_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+            print(f'evaluate xent {eval_loss:.3f}', f'bpc {eval_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
             diag.update({
                 'eval/loss': eval_loss,
                 'eval/bpc': eval_loss / np.log(2),
             })
             if False:
                 test_loss, _ = evaluate(model, tapes.test)
-                print(f'test {test_loss:.3f}', f'bpc {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+                print(f'test xent {test_loss:.3f}', f'bpc {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
                 diag.update({
                     'test/loss': test_loss,
                     'test/bpc': test_loss / np.log(2),
@@ -219,9 +219,9 @@ if __name__ == '__main__':
         step = 'final'
         print('testing', flush=True)
         test_loss, _ = evaluate(model, tapes.test)
-        print(f'final test {test_loss:.3f}', f'bpc {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+        print(f'final test xent {test_loss:.3f}', f'bpc {test_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
         eval_loss, _ = evaluate(model, tqdm(tapes.valid))
-        print(f'final evaluate {eval_loss:.3f}', f'bpc {eval_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
+        print(f'final evaluate xent {eval_loss:.3f}', f'bpc {eval_loss / np.log(2):.3f}', 'after', step, 'steps', flush=True)
 
         if wandb.run is not None:
             wandb.log({
