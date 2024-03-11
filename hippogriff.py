@@ -13,9 +13,9 @@ from flash_attn.layers.rotary import RotaryEmbedding
 class GriffinConfig:
     vocab_size: int = 256
     num_layers: int = 1
-    dim: int = 1024
+    dim: int = 512
     smqa_head_dim: int = 128
-    smqa_q_heads: int = 8
+    smqa_q_heads: int = 4
     smqa_kv_heads: int = 1
     smqa_window_size: int = 512
     hawk_expansion_factor: float = 1.5
