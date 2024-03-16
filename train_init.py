@@ -47,6 +47,7 @@ def save_checkpoint(model, optimizer, scaler, generator, step, total_tokens, arg
         for old_checkpoint in checkpoints[:-last_checkpoint]:
             old_checkpoint.unlink()
             print('removed', old_checkpoint)
+    args.exp.mkdir(parents=True, exist_ok=True)
     checkpoint_filename = args.exp / f'checkpoint.{step:05}.pt'
     torch.save({
         'model': model.state_dict(),
