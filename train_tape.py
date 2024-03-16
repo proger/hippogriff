@@ -13,17 +13,17 @@ class Tapes:
     choices = ["enwik8", "languini"]
 
     @classmethod
-    def enwik8(cls, args):
+    def enwik8(cls, batch_size=32, seed=-1):
         self = cls()
         self.vocab_size = 205
         self.seq_len = 512
-        self.train = Tape(np.memmap('data/enwik8.train', dtype=np.uint8, mode='r'), batch_size=args.batch_size, seq_len=self.seq_len, seed=args.seed)
+        self.train = Tape(np.memmap('data/enwik8.train', dtype=np.uint8, mode='r'), batch_size=batch_size, seq_len=self.seq_len, seed=seed)
         self.valid = Tape(np.memmap('data/enwik8.val', dtype=np.uint8, mode='r'), batch_size=128, seq_len=self.seq_len)
         self.test = Tape(np.memmap('data/enwik8.test', dtype=np.uint8, mode='r'), batch_size=128, seq_len=self.seq_len)
         return self
 
     @classmethod
-    def languini(cls, args):
+    def languini(cls, batch_size=32, **kwargs):
         """
         This tape provides access to training from the Languini Books dataset.
         data/books directory is assumed to be available.
@@ -39,8 +39,8 @@ class Tapes:
             data_path='data/books/books_16384',
             split='train',
             repeat=False,
-            global_batch_size=args.batch_size,
-            batch_idxs=range(args.batch_size),
+            global_batch_size=batch_size,
+            batch_idxs=range(batch_size),
             micro_batches=1,
             sequence_length=self.seq_len,
             device='cuda',
@@ -50,8 +50,8 @@ class Tapes:
             data_path='data/books/books_16384',
             split='test',
             repeat=True,
-            global_batch_size=args.batch_size,
-            batch_idxs=range(args.batch_size),
+            global_batch_size=batch_size,
+            batch_idxs=range(batch_size),
             micro_batches=1,
             sequence_length=self.seq_len,
             device='cuda',

@@ -200,7 +200,7 @@ if __name__ == '__main__':
     with open(args.exp / 'run', 'a') as f:
         print(*sys.argv, file=f)
 
-    tapes = getattr(Tapes, args.data)(args)
+    tapes = getattr(Tapes, args.data)(batch_size=args.batch_size, seed=args.seed)
     model = make_model(tapes.vocab_size, init=args.init, device=device)
     parameter_groups = model.parameter_groups()
     opt = torch.optim.AdamW(parameter_groups, lr=args.lr, betas=(0.9, 0.999), fused=False)
