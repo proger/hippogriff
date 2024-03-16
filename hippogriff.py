@@ -112,10 +112,6 @@ class SlidingMQA(nn.Module):
 class Griffin(nn.Module):
     def __init__(self, config: GriffinConfig):
         super().__init__()
-        self.hawk_norm = RMSNorm(dim=config.dim)
-        self.hawk = Hawk(dim=config.dim, expansion_factor=config.hawk_expansion_factor, kernel_size=config.hawk_kernel_size)
-        self.hawk_gmlp_norm = RMSNorm(dim=config.dim)
-        self.hawk_gmlp = GatedMLP(dim=config.dim, expansion_factor=config.gmlp_expansion_factor)
 
         self.attention = config.smqa_head_dim > 0
         if self.attention:
@@ -125,12 +121,17 @@ class Griffin(nn.Module):
             self.smqa_gmlp_norm = RMSNorm(dim=config.dim)
             self.smqa_gmlp = GatedMLP(dim=config.dim, expansion_factor=config.gmlp_expansion_factor)
 
+        self.hawk_norm = RMSNorm(dim=config.dim)
+        self.hawk = Hawk(dim=config.dim, expansion_factor=config.hawk_expansion_factor, kernel_size=config.hawk_kernel_size)
+        self.hawk_gmlp_norm = RMSNorm(dim=config.dim)
+        self.hawk_gmlp = GatedMLP(dim=config.dim, expansion_factor=config.gmlp_expansion_factor)
+
     def forward(self, x):
-        x = x + self.hawk(self.hawk_norm(x))
-        x = x + self.hawk_gmlp(self.hawk_gmlp_norm(x))
         if self.attention:
             x = x + self.smqa(self.smqa_norm(x))
             x = x + self.smqa_gmlp(self.smqa_gmlp_norm(x))
+        x = x + self.hawk(self.hawk_norm(x))
+        x = x + self.hawk_gmlp(self.hawk_gmlp_norm(x))
         return x
 
 
