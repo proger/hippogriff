@@ -1,18 +1,64 @@
+"""
+A Tape provides a sequence of batches.
+One large training file is split into N uniform parts ("tapes"), where N is your batch size.
+Every next sequence in the batch continues from the previous one.
+"""
+from itertools import islice
 import numpy as np
 import torch
 import torch.nn.functional as F
 
 
 class Tapes:
+    choices = ["enwik8", "languini"]
+
     @classmethod
     def enwik8(cls, args):
-        x = cls()
-        x.vocab_size = 205
-        x.seq_len = 512
-        x.train = Tape(np.memmap('data/enwik8.train', dtype=np.uint8, mode='r'), batch_size=args.batch_size, seq_len=x.seq_len, seed=args.seed)
-        x.valid = Tape(np.memmap('data/enwik8.val', dtype=np.uint8, mode='r'), batch_size=128, seq_len=x.seq_len)
-        x.test = Tape(np.memmap('data/enwik8.test', dtype=np.uint8, mode='r'), batch_size=128, seq_len=x.seq_len)
-        return x
+        self = cls()
+        self.vocab_size = 205
+        self.seq_len = 512
+        self.train = Tape(np.memmap('data/enwik8.train', dtype=np.uint8, mode='r'), batch_size=args.batch_size, seq_len=self.seq_len, seed=args.seed)
+        self.valid = Tape(np.memmap('data/enwik8.val', dtype=np.uint8, mode='r'), batch_size=128, seq_len=self.seq_len)
+        self.test = Tape(np.memmap('data/enwik8.test', dtype=np.uint8, mode='r'), batch_size=128, seq_len=self.seq_len)
+        return self
+
+    @classmethod
+    def languini(cls, args):
+        """
+        This tape provides access to training from the Languini Books dataset.
+        data/books directory is assumed to be available.
+        """
+        try:
+            from languini.dataset_lib.languini_books import LanguiniDatasetIterator
+        except ImportError as e:
+            raise ImportError("Install Languini Kitchen from: https://github.com/languini-kitchen/languini-kitchen") from e
+        self = cls()
+        self.vocab_size = 16384
+        self.seq_len = 512
+        self.train = LanguiniTape(LanguiniDatasetIterator(
+            data_path='data/books/books_16384',
+            split='train',
+            repeat=False,
+            global_batch_size=args.batch_size,
+            batch_idxs=range(args.batch_size),
+            micro_batches=1,
+            sequence_length=self.seq_len,
+            device='cuda',
+            end_of_doc_token=2,
+        ))
+        self.valid = LanguiniTape(LanguiniDatasetIterator(
+            data_path='data/books/books_16384',
+            split='test',
+            repeat=True,
+            global_batch_size=args.batch_size,
+            batch_idxs=range(args.batch_size),
+            micro_batches=1,
+            sequence_length=self.seq_len,
+            device='cuda',
+            end_of_doc_token=2,
+        ), max_batches=512)
+        self.test = self.valid
+        return self
 
 
 class Tape:
@@ -25,6 +71,7 @@ class Tape:
         self.seq_len = seq_len
         self.sequences = (self.tape_len + seq_len - 1) // seq_len
         self.iter = None
+        # setting the seed turns the Tape into a regular iid sequence sampler
         self.generator = torch.Generator().manual_seed(seed) if seed >= 0 else None
 
     def __len__(self):
@@ -49,3 +96,23 @@ class Tape:
         x = torch.from_numpy((self.data[i:i+self.seq_len]).astype(np.int64))
         return F.pad(x, (0, self.seq_len - x.shape[0]), value=padding)
 
+
+class LanguiniTape:
+    "Languini provides a streaming interface for data, this object wraps it into a random access-like interface."
+    def __init__(self, iterator, max_batches=-1):
+        self.iterator = iterator
+        self.step = -1
+        self.generator = None # for compatibility with Tape
+        self.max_batches = max_batches
+
+    def __iter__(self):
+        yield from islice(((x.squeeze(0).contiguous(), y.squeeze(0).contiguous()) for x, y, _ in self.iterator), 0, self.max_batches)
+
+    def __getitem__(self, step):
+        if step != self.step + 1:
+            raise ValueError(f'steps over languini dataset must advance by 1. requested {step} but current step is {self.step}')
+        if self.max_batches > 0 and step >= self.max_batches:
+            raise IndexError(f'requested step {step} exceeds max_batches {self.max_batches}')
+        x, y, _ = next(self.iterator)
+        self.step = step
+        return x.squeeze(0).contiguous(), y.squeeze(0).contiguous() # squeeze the micro batch dimension

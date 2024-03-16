@@ -23,7 +23,7 @@ torch.backends.cudnn.allow_tf32 = True
 class Formatter(argparse.ArgumentDefaultsHelpFormatter, argparse.MetavarTypeHelpFormatter): pass
 parser = argparse.ArgumentParser("train", formatter_class=Formatter)
 parser.add_argument('--exp', type=Template, default='exp', help="path to experiment directory (with substitution of other command line arguments using $lr syntax)")
-parser.add_argument('--data', type=str, default='enwik8', help="collection of datasets to use for training, see classmethods in train_tapes.py for selection")
+parser.add_argument('--data', type=str, default='enwik8', choices=Tapes.choices, help="collection of datasets to use for training")
 parser.add_argument('--lr', type=float, default=1e-3, help="learning rate")
 parser.add_argument('--until', type=int, required=False, help="truncate run after this many steps")
 parser.add_argument('--max_checkpoints', type=int, default=10, help="keep only the last n checkpoints")
