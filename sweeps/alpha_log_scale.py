@@ -4,6 +4,7 @@ How much does the constant -8 matter in Hawk?
 from pathlib import Path
 import torch
 import wandb
+import math
 
 from train import train, Tapes, parser, device
 from hippogriff import GriffinLM, GriffinConfig
@@ -21,7 +22,7 @@ def make_model(alpha_log_scale, vocab_size=16384, device='cuda'):
             if alpha_log_scale == 'learn':
                 param.requires_grad = True
             else:
-                param.data.fill_(alpha_log_scale)
+                param.data.fill_(math.log(alpha_log_scale))
                 param.requires_grad = False
     
     return model
@@ -47,7 +48,7 @@ sweep_configuration = {
     "method": "grid",
     "metric": {"goal": "minimize", "name": "eval/loss"},
     "parameters": {
-        "alpha_log_scale": {"values": ["learn", -8, -7, -6, -5, -4, -3, -2, -1]},
+        "alpha_log_scale": {"values": ["learn", 14, 8, 4]},
     },
 }
 

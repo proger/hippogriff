@@ -44,7 +44,7 @@ class Hawk(nn.Module):
         self.gates = nn.Linear(hidden, 2*hidden, bias=True)
         self.forget_base = nn.Parameter(torch.linspace(-4.323, -9, hidden))
         self.output = nn.Linear(hidden, dim, bias=False)
-        self.alpha_log_scale = nn.Parameter(-8 * torch.ones(1), requires_grad=False)
+        self.alpha_log_scale = nn.Parameter(torch.tensor([8]).log(), requires_grad=False)
 
         with torch.no_grad():
             self.input.weight.normal_(std=dim**-0.5)
@@ -58,8 +58,8 @@ class Hawk(nn.Module):
 
         # RG-LRU: linear recurrent unit with input-dependent gating
         forget, input = self.gates(x).chunk(2, dim=-1)
-        alpha = (self.alpha_log_scale * softplus(self.forget_base) * forget.sigmoid()).exp()
-        beta = (1 - alpha**2 + 1e-6).sqrt()
+        alpha = (-self.alpha_log_scale.exp() * softplus(self.forget_base) * forget.sigmoid()).exp()
+        beta = (1 - alpha**2 + 1e-6).sqrt() # stabilizes variance
         x = beta * input.sigmoid() * x
 
         h = scan(alpha.mT.contiguous(), x.mT.contiguous()).mT
