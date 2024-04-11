@@ -57,9 +57,13 @@ def evaluate(model, batches, diag_prefix='eval') -> tuple[float, dict]:
                 logits = model(input_ids)
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1)).mean()
 
-            accuracy_sum, accuracy_count = logits.argmax(dim=-1).eq(targets).sum().item(), targets.numel()
+            outputs = logits.argmax(dim=-1)
+            mask = targets != -100
+            accuracy_sum, accuracy_count = outputs[mask].eq(targets[mask]).sum().item(), mask.sum().item()
 
             if i == 0:
+                print('outputs[0]', *[str(x).ljust(2) if x != -100 else '  _' for x in outputs[0].tolist()])
+                print('targets[0]', *[str(x).ljust(2) if x != -100 else ' _' for x in targets[0].tolist()])
                 diag.update(batch_diag)
         losses.append(loss.item())
         if i and i % 100 == 0:
