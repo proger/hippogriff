@@ -88,7 +88,7 @@ def train(model, tapes, opt, *, args):
     step = 0
     if args.resume:
         if checkpoints := list_checkpoints(args):
-            step, total_tokens = load_checkpoint(checkpoints[-1], model=model, opt=opt, scaler=scaler, generator=tapes.train.generator)
+            step, total_tokens = load_checkpoint(checkpoints[-1], model=model, opt=opt, scaler=scaler, generator=getattr(tapes.train, 'generator', None))
     print_weights(model, full=True)
 
     steps = args.steps
@@ -169,11 +169,12 @@ def train(model, tapes, opt, *, args):
             step_tokens = 0
 
         if step % args.eval_interval == 0:
-            save_checkpoint(model, opt, scaler, tapes.train.generator, step, total_tokens, args)
+            save_checkpoint(model, opt, scaler, getattr(tapes.train, 'generator', None), step, total_tokens, args)
             eval = evaluate(model, tapes.valid, diag_prefix='eval')
             eval_loss, eval_bpb, eval_accuracy = eval['eval/loss'], eval['eval/bpb'], eval['eval/accuracy']
             diag.update(eval)
             print(f'evaluate xent {eval_loss:.3f}', f'bpb {eval_bpb:.3f}', f'accuracy {eval_accuracy:.3f}', 'after', step, 'steps', flush=True)
+
             if False:
                 test = evaluate(model, tapes.test, diag_prefix='test')
                 test_loss, test_bpb = test['test/loss'], test['test/bpb']
