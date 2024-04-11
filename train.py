@@ -83,7 +83,7 @@ def train(model, tapes, opt, *, args):
     opt.zero_grad(set_to_none=True)
 
     scaler = torch.cuda.amp.GradScaler(enabled=dtype==torch.float16)
-    step_tokens, total_tokens = 0, 0
+    step_tokens, total_tokens, eval_accuracy = 0, 0, 0
 
     step = 0
     if args.resume:
@@ -185,10 +185,6 @@ def train(model, tapes, opt, *, args):
                     'test/accuracy': test['test/accuracy'],
                 })
 
-            if eval_accuracy > args.eval_accuracy_stop:
-                print('stopping: reached --eval_accuracy_stop {args.eval_accuracy_stop} criterion')
-                break
-
             model.train()
 
         if diag and wandb.run is not None:
@@ -196,6 +192,10 @@ def train(model, tapes, opt, *, args):
 
         if args.until is not None and step >= args.until:
             print(f'stopping: reached --until {args.until}')
+            break
+
+        if eval_accuracy > args.eval_accuracy_stop:
+            print('stopping: reached --eval_accuracy_stop {args.eval_accuracy_stop} criterion')
             break
 
     model.eval()
