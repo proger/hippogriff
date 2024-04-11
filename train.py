@@ -195,7 +195,7 @@ def train(model, tapes, opt, *, args):
             break
 
         if eval_accuracy > args.eval_accuracy_stop:
-            print('stopping: reached --eval_accuracy_stop {args.eval_accuracy_stop} criterion')
+            print(f'stopping: reached --eval_accuracy_stop {args.eval_accuracy_stop} criterion')
             break
 
     model.eval()
