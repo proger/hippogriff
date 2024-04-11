@@ -13,11 +13,14 @@ from multiquery_ar import multiquery_ar
 WANDB_PROJECT = 'hippogriff-mqar'
 
 def run():
+    wandb.init(project=WANDB_PROJECT)
+
+    # how to nicely merge args and wandb.config?
     args = parser.parse_args()
     args.exp = Path(args.exp.substitute(**vars(args)))
     args.exp.mkdir(parents=True, exist_ok=True)
-    
-    wandb.init(project=WANDB_PROJECT, config=vars(args))
+    args.lr = wandb.config.lr
+
     vocab_size = 64
     batch_size = 64
     num_train_batches = 100_000 // batch_size
@@ -70,13 +73,14 @@ def run():
 
 
 sweep_configuration = {
-    "name": "mqar",
+    "name": "mqar+lr",
     "method": "grid",
     "metric": {"goal": "maximize", "name": "eval/accuracy"},
     "parameters": {
         "model": {"values": ["hawk", "qlstm", "qlstm_tied8", "qlstm_tied16"]},
-        "dim": {"values": [256, 512]},
-        "num_layers": {"values": [1, 2]},
+        "dim": {"values": [256]},
+        "num_layers": {"values": [2]},
+        "lr": {"values": [1e-2, 1e-3, 3e-4, 1e-4]},
     },
 }
 
