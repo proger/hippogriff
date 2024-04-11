@@ -1,10 +1,11 @@
 __version__ = '0.0.3'
 
 from dataclasses import dataclass
+import math
 from typing import Literal
 import torch
 import torch.nn as nn
-from torch.nn.functional import softplus, gelu
+from torch.nn.functional import softplus, gelu, silu
 from accelerated_scan.warp import scan
 from flash_attn import flash_attn_func
 from flash_attn.layers.rotary import RotaryEmbedding
@@ -15,14 +16,15 @@ class GriffinConfig:
     vocab_size: int = 256
     num_layers: int = 1
     dim: int = 512
-    smqa_head_dim: int = 128
+    smqa_head_dim: int = 128 # 0 for no attention
     smqa_q_heads: int = 4
     smqa_kv_heads: int = 1
     smqa_window_size: int = 512
-    hawk_expansion_factor: float = 1.5
-    conv_kernel_size: int = 4
-    time_module: Literal['TiedQuasiLSTM', 'Hawk'] = 'Hawk'
-    tied_quasi_lstm_num_heads: int = 16
+    hawk_expansion_factor: float = 1.5 # supported by: 'Hawk', 'S6'
+    conv_kernel_size: int = 4 # supported by: 'Hawk', 'S6'
+    time_module: Literal['TiedQuasiLSTM', 'Hawk', 'S6'] = 'Hawk'
+    tied_quasi_lstm_num_heads: int = 16 # supported by: 'TiedQuasiLSTM'
+    s6_d_state: int = 16 # supported by: 'S6'
     gmlp_expansion_factor: float = 2
 
 
@@ -35,6 +37,80 @@ class RMSNorm(nn.Module):
     def forward(self, x):
         x = x / x.norm(p=2, dim=-1, keepdim=True)
         return self.gamma / self.scale * x
+
+
+class S6(nn.Module):
+    def __init__(self, dim, expansion_factor=2, conv_kernel_size=4, d_state=16, n_layers=1, conv_bias=True, slow=False):
+        super().__init__()
+        self.hidden = hidden = int(dim * expansion_factor)
+        self.delta_rank = math.ceil(dim / 16)
+        self.d_state = d_state # state expansion factor
+        self.slow = slow
+
+        self.in_proj = nn.Linear(dim, 2*hidden, bias=False)
+        self.gate_proj = nn.Linear(hidden, self.delta_rank + d_state*2, bias=False)
+
+        if conv_kernel_size:
+            self.conv = nn.Conv1d(in_channels=hidden, out_channels=hidden, bias=bool(conv_bias),
+                                  kernel_size=conv_kernel_size, groups=hidden, padding=conv_kernel_size - 1)
+        else:
+            self.conv = None
+
+        self.delta_proj = nn.Linear(self.delta_rank, hidden, bias=False)
+
+        dt_max = math.log(0.1)
+        dt_min = math.log(0.001)
+        dt_floor = 0.0001
+        dt = torch.exp(torch.rand(hidden) * (dt_max - dt_min) + dt_min).clamp(min=dt_floor)
+        inv_dt = dt + torch.log(-torch.expm1(-dt))
+        self.delta_bias = nn.Parameter(inv_dt, requires_grad=True)
+
+        self.A_log = nn.Parameter(torch.arange(1, d_state+1, dtype=torch.float32).log().repeat(hidden, 1))
+        self.A_log._no_weight_decay = True
+
+        self.D = nn.Parameter(torch.ones(hidden, dtype=torch.float32), requires_grad=True)
+        self.out_proj = nn.Linear(hidden, dim, bias=False)
+
+        with torch.no_grad():
+            nn.init.uniform_(self.in_proj.weight, -dim**-0.5, dim**-0.5)
+            nn.init.uniform_(self.gate_proj.weight, -hidden**-0.5, hidden**-0.5)
+            nn.init.uniform_(self.delta_proj.weight, -self.delta_rank**-0.5, self.delta_rank**-0.5)
+            nn.init.kaiming_uniform_(self.out_proj.weight, a=5**0.5)
+            self.out_proj.weight /= n_layers**0.5
+
+    def forward(self, x):
+        u, o = self.in_proj(x).split(self.hidden, dim=-1)
+        N, T, C = u.shape
+
+        if self.conv is not None:
+            u = self.conv(u.mT)[..., :T].mT
+        u = silu(u)
+
+        delta_lo, b, c = self.gate_proj(u).split([self.delta_rank, self.d_state, self.d_state], dim=-1)
+
+        if self.slow:
+            delta = (self.delta_proj(delta_lo) + self.delta_bias[None, None, :].float()).exp().log1p()
+
+            delta = delta[..., None]
+            forget = (-self.A_log.exp() * delta).exp()
+            update = delta * u.unsqueeze(-1) * b.unsqueeze(-2)
+            forget = forget.view(N, T, C*self.d_state).mT.contiguous()
+            update = update.view(N, T, C*self.d_state).mT.contiguous()
+            h = scan(forget, update)
+            h = h.mT.contiguous().view(N, T, C, self.d_state)
+            y = (c.unsqueeze(-2) * h).sum(dim=-1)
+
+            y = y + self.D * u
+            y = y * o.sigmoid() * o
+        else:
+            from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
+            delta = self.delta_proj(delta_lo.float()).mT
+            a = -self.A_log.exp().float()
+            y = selective_scan_fn(u.mT, delta, A=a, B=b.mT, C=c.mT, D=self.D, z=o.mT,
+                                  delta_bias=self.delta_bias.float(), delta_softplus=True)
+            y = y.mT
+
+        return self.out_proj(y)
 
 
 class TiedQuasiLSTM(nn.Module):
@@ -162,6 +238,9 @@ class Block(nn.Module):
                 self.time = TiedQuasiLSTM(dim=config.dim, num_heads=config.tied_quasi_lstm_num_heads)
             case 'Hawk':
                 self.time = Hawk(dim=config.dim, expansion_factor=config.hawk_expansion_factor, conv_kernel_size=config.conv_kernel_size)
+            case 'S6':
+                self.time = S6(dim=config.dim, expansion_factor=config.hawk_expansion_factor, conv_kernel_size=config.conv_kernel_size,
+                               d_state=config.s6_d_state, n_layers=config.num_layers, conv_bias=True, slow=False)
         self.gmlp_norm = RMSNorm(dim=config.dim)
         self.gmlp = GatedMLP(dim=config.dim, expansion_factor=config.gmlp_expansion_factor)
 
@@ -195,8 +274,8 @@ class GriffinLM(nn.Module):
         return [
             {'params': self.embedding.parameters(), 'weight_decay': 0.0}, # lm_head is tied here
             # do not decay biases and single-column parameters (forget_base, rmsnorm), those are usually scales
-            {'params': (p for p in self.backbone.parameters() if p.dim() < 2), 'weight_decay': 0.0},
-            {'params': (p for p in self.backbone.parameters() if p.dim() >= 2), 'weight_decay': weight_decay},
+            {'params': (p for p in self.backbone.parameters() if p.dim() < 2 or getattr(p, '_no_weight_decay', False)), 'weight_decay': 0.0},
+            {'params': (p for p in self.backbone.parameters() if p.dim() >= 2 and not getattr(p, '_no_weight_decay', False)), 'weight_decay': weight_decay},
             {'params': self.output_norm.parameters(), 'weight_decay': 0.0},
         ]
 
@@ -212,10 +291,16 @@ if __name__ == '__main__':
     device = 'cuda'
     torch.manual_seed(3407)
 
-    config = GriffinConfig()
-    griffin = GriffinLM(config).to('cuda')
+    config = GriffinConfig(time_module='S6', smqa_head_dim=0)
+    model = GriffinLM(config).to('cuda')
+    print(model)
     input_ids = torch.randint(0, config.vocab_size, (1, 1024), device='cuda')
     with torch.amp.autocast(device_type='cuda'):
-        output = griffin(input_ids)
+        from train_diagnostics import summarize_activations
+        with summarize_activations(model, infix=['proj', 'conv'], verbose=True) as log:
+            output = model(input_ids)
+        for k in log:
+            if 'mean/' in k:
+                print(k, log[k])
         probs = output.softmax(dim=-1)
     print(probs.shape)
