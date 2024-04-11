@@ -1,6 +1,7 @@
 __version__ = '0.0.3'
 
 from dataclasses import dataclass
+from typing import Literal
 import torch
 import torch.nn as nn
 from torch.nn.functional import softplus, gelu
@@ -20,6 +21,8 @@ class GriffinConfig:
     smqa_window_size: int = 512
     hawk_expansion_factor: float = 1.5
     hawk_kernel_size: int = 4
+    time_module: Literal['TiedQuasiLSTM', 'Hawk'] = 'Hawk'
+    tied_quasi_lstm_num_heads: int = 16
     gmlp_expansion_factor: float = 2
 
 
@@ -32,6 +35,29 @@ class RMSNorm(nn.Module):
     def forward(self, x):
         x = x / x.norm(p=2, dim=-1, keepdim=True)
         return self.gamma / self.scale * x
+
+
+class TiedQuasiLSTM(nn.Module):
+    def __init__(self, *, dim, num_heads):
+        super().__init__()
+        self.head_dim = dim // num_heads
+        self.hidden = hidden = self.head_dim * num_heads
+        self.num_heads = num_heads
+        self.gates = nn.Linear(dim, num_heads + 3 * hidden, bias=False)
+        self.output = nn.Linear(hidden, dim)
+
+        with torch.no_grad():
+            self.gates.weight.normal_(std=dim**-0.5)
+            self.output.weight.normal_(std=hidden**-0.5)
+
+    def forward(self, x):
+        f, i, t, o = self.gates(x).split([self.num_heads, self.hidden, self.hidden, self.hidden], dim=-1)
+        f = f.sigmoid().repeat_interleave(self.head_dim, -1)
+        update = i.sigmoid() * t.tanh()
+        c = scan(f.mT.contiguous(), update.mT.contiguous()).mT
+        h = o * torch.tanh(c)
+        x = self.output(h)
+        return x
 
 
 class Hawk(nn.Module):
@@ -122,7 +148,11 @@ class Block(nn.Module):
             self.smqa_gmlp = GatedMLP(dim=config.dim, expansion_factor=config.gmlp_expansion_factor)
 
         self.time_norm = RMSNorm(dim=config.dim)
-        self.time = Hawk(dim=config.dim, expansion_factor=config.hawk_expansion_factor, kernel_size=config.hawk_kernel_size)
+        match config.time_module:
+            case 'TiedQuasiLSTM':
+                self.time = TiedQuasiLSTM(dim=config.dim, num_heads=config.tied_quasi_lstm_num_heads)
+            case 'Hawk':
+                self.time = Hawk(dim=config.dim, expansion_factor=config.hawk_expansion_factor, kernel_size=config.hawk_kernel_size)
         self.gmlp_norm = RMSNorm(dim=config.dim)
         self.gmlp = GatedMLP(dim=config.dim, expansion_factor=config.gmlp_expansion_factor)
 
