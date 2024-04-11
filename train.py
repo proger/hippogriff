@@ -38,6 +38,7 @@ parser.add_argument('--batch_size', type=int, default=32, help="batch size")
 parser.add_argument('--log_interval', type=int, default=100, help="log every n steps")
 parser.add_argument('--eval_interval', type=int, default=1000, help="evaluate every n steps")
 parser.add_argument('--anomaly', type=str, choices=['auto', 'active', 'ignore'], default='auto', help="when to detect and break on anomalies: auto (default) enables anomaly detection only when a nan gradient is detected, active enables anomaly detection for all steps, ignore disables anomaly detection.")
+parser.add_argument('--eval_accuracy_stop', type=float, default=0.99, help="stop training when evaluation accuracy exceeds this value")
 
 device = 'cuda' # use CUDA_VISIBLE_DEVICES to choose the device until accelerated-scan supports cuda:N
 dtype = torch.bfloat16 # torch.float16
@@ -178,15 +179,19 @@ def train(model, tapes, opt, *, args):
                     'test/bpb': test_bpb,
                     'test/accuracy': test['test/accuracy'],
                 })
+
+            if eval_accuracy > args.eval_accuracy_stop:
+                print('stopping: reached --eval_accuracy_stop {args.eval_accuracy_stop} criterion')
+                break
+
             model.train()
 
         if diag and wandb.run is not None:
             wandb.log(diag, step=step)
 
         if args.until is not None and step >= args.until:
-            print('stopping')
-            model.eval()
-            return
+            print(f'stopping: reached --until {args.until}')
+            break
 
     model.eval()
 
