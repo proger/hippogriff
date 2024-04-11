@@ -109,7 +109,7 @@ class SlidingMQA(nn.Module):
         return self.output(x)
 
 
-class Griffin(nn.Module):
+class Block(nn.Module):
     def __init__(self, config: GriffinConfig):
         super().__init__()
 
@@ -121,17 +121,17 @@ class Griffin(nn.Module):
             self.smqa_gmlp_norm = RMSNorm(dim=config.dim)
             self.smqa_gmlp = GatedMLP(dim=config.dim, expansion_factor=config.gmlp_expansion_factor)
 
-        self.hawk_norm = RMSNorm(dim=config.dim)
-        self.hawk = Hawk(dim=config.dim, expansion_factor=config.hawk_expansion_factor, kernel_size=config.hawk_kernel_size)
-        self.hawk_gmlp_norm = RMSNorm(dim=config.dim)
-        self.hawk_gmlp = GatedMLP(dim=config.dim, expansion_factor=config.gmlp_expansion_factor)
+        self.time_norm = RMSNorm(dim=config.dim)
+        self.time = Hawk(dim=config.dim, expansion_factor=config.hawk_expansion_factor, kernel_size=config.hawk_kernel_size)
+        self.gmlp_norm = RMSNorm(dim=config.dim)
+        self.gmlp = GatedMLP(dim=config.dim, expansion_factor=config.gmlp_expansion_factor)
 
     def forward(self, x):
         if self.attention:
             x = x + self.smqa(self.smqa_norm(x))
             x = x + self.smqa_gmlp(self.smqa_gmlp_norm(x))
-        x = x + self.hawk(self.hawk_norm(x))
-        x = x + self.hawk_gmlp(self.hawk_gmlp_norm(x))
+        x = x + self.time(self.time_norm(x))
+        x = x + self.gmlp(self.gmlp_norm(x))
         return x
 
 
@@ -139,7 +139,7 @@ class GriffinLM(nn.Module):
     def __init__(self, config: GriffinConfig):
         super().__init__()
         self.embedding = nn.Embedding(config.vocab_size, config.dim)
-        self.backbone = nn.ModuleList([Griffin(config) for _ in range(config.num_layers)])
+        self.backbone = nn.ModuleList([Block(config) for _ in range(config.num_layers)])
         self.output_norm = RMSNorm(dim=config.dim)
         self.lm_head = nn.Linear(config.dim, config.vocab_size, bias=False)
 
@@ -167,8 +167,6 @@ class GriffinLM(nn.Module):
             x = block(x)
         x = self.lm_head(self.output_norm(x))
         return x
-
-        
 
 
 if __name__ == '__main__':
