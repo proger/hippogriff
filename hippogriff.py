@@ -20,11 +20,11 @@ class GriffinConfig:
     smqa_q_heads: int = 4
     smqa_kv_heads: int = 1
     smqa_window_size: int = 512
-    hawk_expansion_factor: float = 1.5 # supported by: 'Hawk', 'S6'
+    hawk_expansion_factor: float = 1.5 # parameteric state expansion, supported by: 'Hawk', 'S6'
     conv_kernel_size: int = 4 # supported by: 'Hawk', 'S6'
-    time_module: Literal['TiedQuasiLSTM', 'Hawk', 'S6'] = 'Hawk'
-    tied_quasi_lstm_num_heads: int = 16 # supported by: 'TiedQuasiLSTM'
-    s6_d_state: int = 16 # supported by: 'S6'
+    time_module: Literal['TiedQuasiLSTM', 'OuterProduct', 'Hawk', 'S6'] = 'Hawk'
+    tied_quasi_lstm_num_heads: int = 16 # parameter-shared state expansion, supported by: 'TiedQuasiLSTM', 'OuterProduct'
+    state_expansion: int = 1 # parameter-shared state expansion, supported by: 'S6'
     gmlp_expansion_factor: float = 2
 
 
@@ -136,6 +136,37 @@ class TiedQuasiLSTM(nn.Module):
         return x
 
 
+class OuterProduct(nn.Module):
+    def __init__(self, *, dim, num_heads):
+        super().__init__()
+        self.head_dim = dim // num_heads
+        self.hidden = hidden = self.head_dim * num_heads
+        self.num_heads = num_heads
+        self.gates = nn.Linear(dim, 3 * hidden, bias=False)
+        self.output = nn.Linear(hidden, dim)
+
+        with torch.no_grad():
+            self.gates.weight.normal_(std=dim**-0.5)
+            self.output.weight.normal_(std=hidden**-0.5)
+
+    def forward(self, x):
+        N, T, HD = x.shape
+        f, i, o = self.gates(x).chunk(3, dim=-1)
+        f = f.sigmoid()
+        f = f.view(N, T, self.num_heads, self.head_dim) # N, T, H, D
+        i = i.view(N, T, self.num_heads, self.head_dim) # N, T, H, D
+        update = (1 - f).unsqueeze(-1) * i.unsqueeze(-2) # N, T, H, D, D
+        update = update.view(N, T, -1)
+        f = f.repeat_interleave(self.head_dim, dim=-1).view(N, T, -1) # N, T, H, D*D
+        c = scan(f.mT.contiguous(), update.mT.contiguous()).mT
+        c = c.reshape(N, T, self.num_heads, self.head_dim, self.head_dim) # N, T, H, D, D
+        o = o.view(N, T, self.num_heads, self.head_dim, 1) # N, T, H, D
+        h = c @ o
+        x = self.output(h.view(N, T, HD))
+        return x
+
+
+
 class Hawk(nn.Module):
     def __init__(self, *, dim=1024, expansion_factor=1.5, conv_kernel_size=4):
         super().__init__()
@@ -236,11 +267,13 @@ class Block(nn.Module):
         match config.time_module:
             case 'TiedQuasiLSTM':
                 self.time = TiedQuasiLSTM(dim=config.dim, num_heads=config.tied_quasi_lstm_num_heads)
+            case 'OuterProduct':
+                self.time = OuterProduct(dim=config.dim, num_heads=config.tied_quasi_lstm_num_heads)
             case 'Hawk':
                 self.time = Hawk(dim=config.dim, expansion_factor=config.hawk_expansion_factor, conv_kernel_size=config.conv_kernel_size)
             case 'S6':
                 self.time = S6(dim=config.dim, expansion_factor=config.hawk_expansion_factor, conv_kernel_size=config.conv_kernel_size,
-                               d_state=config.s6_d_state, n_layers=config.num_layers, conv_bias=True, slow=False)
+                               d_state=config.state_expansion, n_layers=config.num_layers, conv_bias=True, slow=False)
         self.gmlp_norm = RMSNorm(dim=config.dim)
         self.gmlp = GatedMLP(dim=config.dim, expansion_factor=config.gmlp_expansion_factor)
 

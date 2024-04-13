@@ -52,49 +52,66 @@ def run():
     match wandb.config.model.split('_'):
         case ['hawk']:
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0, dim=dim,
-                                   conv_kernel_size=4)
+                                   conv_kernel_size=4, hawk_expansion_factor=1)
         case ['hawk', 'noconv']:
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0, dim=dim,
-                                   conv_kernel_size=0)
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
         # all s6 variants have conv turned off for now
         case ['s6', 'dstate1']:
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0, dim=dim,
-                                   time_module='S6', s6_d_state=1,
-                                   conv_kernel_size=0)
+                                   time_module='S6', state_expansion=1,
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
+        case ['s6', 'dstate2']:
+            config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0,
+                                   time_module='S6', state_expansion=2, dim=dim,
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
+        case ['s6', 'dstate4']:
+            config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0,
+                                   time_module='S6', state_expansion=4, dim=dim,
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
         case ['s6', 'dstate8']:
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0,
-                                   time_module='S6', s6_d_state=8, dim=dim//8,
-                                   conv_kernel_size=0)
+                                   time_module='S6', state_expansion=8, dim=dim,
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
         case ['s6', 'dstate16']:
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0,
-                                   time_module='S6', s6_d_state=16, dim=dim//16,
-                                   conv_kernel_size=0)
+                                   time_module='S6', state_expansion=16, dim=dim,
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
         case ['s6', 'dstate32']:
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0,
-                                   time_module='S6', s6_d_state=32, dim=dim//32,
-                                   conv_kernel_size=0)
+                                   time_module='S6', state_expansion=32, dim=dim,
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
         case ['s6', 'dstate64']:
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0,
-                                   time_module='S6', s6_d_state=64, dim=dim//64,
-                                   conv_kernel_size=0)
+                                   time_module='S6', state_expansion=64, dim=dim,
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
         case ['qlstm']:
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0, dim=dim,
                                    time_module='TiedQuasiLSTM', tied_quasi_lstm_num_heads=dim,
-                                   conv_kernel_size=0)
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
         case ['qlstm', 'tied8']:
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0, dim=dim,
                                    time_module='TiedQuasiLSTM', tied_quasi_lstm_num_heads=8,
-                                   conv_kernel_size=0)
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
         case ['qlstm', 'tied16']:
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0, dim=dim,
                                    time_module='TiedQuasiLSTM', tied_quasi_lstm_num_heads=16,
-                                   conv_kernel_size=0)
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
         case ['qlstm', 'tied32']:
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0, dim=dim,
                                    time_module='TiedQuasiLSTM', tied_quasi_lstm_num_heads=32,
-                                   conv_kernel_size=0)
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
+        case ['outer', n]:
+            config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0, dim=dim,
+                                   time_module='OuterProduct', tied_quasi_lstm_num_heads=int(n),
+                                   conv_kernel_size=0, hawk_expansion_factor=1)
     model = GriffinLM(config).to(device)
     wandb.config.parameters = sum(p.numel() for p in model.parameters())
+    if config.time_module == 'OuterProduct':
+        state_size = (config.dim // config.tied_quasi_lstm_num_heads)**2 * config.tied_quasi_lstm_num_heads
+    else:
+        state_size = config.dim
+    wandb.config.state_size = sum([config.hawk_expansion_factor * config.state_expansion * state_size for _ in range(config.num_layers)])
     wandb.watch(model, log='all')
 
     opt = torch.optim.AdamW(model.parameter_groups(), lr=args.lr, betas=(0.9, 0.999), fused=False)
@@ -102,14 +119,16 @@ def run():
 
 
 sweep_configuration = {
-    "name": "mqar+s6",
+    "name": "mqar8kv_len64+outer+s6+lr",
     "method": "grid",
     "metric": {"goal": "maximize", "name": "eval/accuracy"},
     "parameters": {
-        "model": {"values": ["hawk_noconv", "s6_dstate16", "s6_dstate8", "qlstm", "qlstm_tied8", "qlstm_tied16"]},
-        "dim": {"values": [64, 128, 256, 512]},
+        #"model": {"values": ["hawk_noconv", "s6_dstate1", "s6_dstate4", "s6_dstate8", "s6_dstate16", "qlstm", "qlstm_tied8", "qlstm_tied16"]},
+        "model": {"values": ["outer_8", "outer_4", "s6_dstate8", "s6_dstate16"]},
+        #"dim": {"values": [64, 128, 256, 512]},
+        "dim": {"values": [64]},
         "num_layers": {"values": [2]},
-        "lr": {"values": [1e-2, 1e-3, 3e-4, 1e-4]},
+        "lr": {"values": [2e-3, 1e-3, 3e-4, 1e-4]},
         #"lr": {"values": [1e-3]},
     },
 }
