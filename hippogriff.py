@@ -22,10 +22,11 @@ class GriffinConfig:
     smqa_window_size: int = 512
     hawk_expansion_factor: float = 1.5 # parameteric state expansion, supported by: 'Hawk', 'S6'
     conv_kernel_size: int = 4 # supported by: 'Hawk', 'S6'
-    time_module: Literal['TiedQuasiLSTM', 'OuterProduct', 'Hawk', 'S6'] = 'Hawk'
-    tied_quasi_lstm_num_heads: int = 16 # parameter-shared state expansion, supported by: 'TiedQuasiLSTM', 'OuterProduct'
+    time_module: Literal['TiedQuasiLSTM', 'AFWP', 'OuterProduct', 'Hawk', 'S6'] = 'Hawk'
+    tied_quasi_lstm_num_heads: int = 16 # parameter-shared state expansion, supported by: 'TiedQuasiLSTM', 'AFWP', 'OuterProduct'
     state_expansion: int = 1 # parameter-shared state expansion, supported by: 'S6'
     gmlp_expansion_factor: float = 2
+    outer_query_values: bool = False # perform final query from along the value dimension, supported by 'AFWP', 'OuterProduct'
 
 
 class RMSNorm(nn.Module):
@@ -136,14 +137,57 @@ class TiedQuasiLSTM(nn.Module):
         return x
 
 
+class AFWP(nn.Module):
+    def __init__(self, *, key_dim, value_dim, num_heads, outer_query_values=False):
+        super().__init__()
+        model_dim = value_dim * num_heads
+        self.key_dim = key_dim
+        self.value_dim = value_dim
+        self.num_heads = num_heads
+        self.outer_query_values = outer_query_values
+        if outer_query_values:
+            self.query_dim = value_dim
+            self.hidden_dim = key_dim
+        else:
+            self.query_dim = key_dim
+            self.hidden_dim = value_dim
+        self.gates = nn.Linear(model_dim, self.key_dim * num_heads + self.query_dim * num_heads, bias=False)
+        self.output = nn.Linear(self.hidden_dim * num_heads, model_dim)
+
+        with torch.no_grad():
+            self.gates.weight.normal_(std=model_dim**-0.5)
+            self.output.weight.normal_(std=(self.hidden_dim * num_heads)**-0.5)
+
+    def forward(self, x):
+        N, T, HV = x.shape
+        k, q = self.gates(x).split([self.key_dim * self.num_heads, self.query_dim * self.num_heads], dim=-1)
+        k = k.sigmoid()
+        k = k.view(N, T, self.num_heads, -1) # N, T, H, K
+        x = x.view(N, T, self.num_heads, -1) # N, T, H, V
+        kv = k.unsqueeze(-1) * x.unsqueeze(-2) # outer product, N, T, H, K, V
+        kv = kv.view(N, T, -1) # N, T, H*K*V
+        k = (1-k).repeat_interleave(self.value_dim, dim=-1) # N, T, H, K*V
+        k = k.view(N, T, -1) # N, T, H*K*V
+        w = scan(k.mT.contiguous(), kv.mT.contiguous()).mT # fast weights
+        w = w.reshape(N, T, self.num_heads, self.key_dim, -1) # N, T, H, K, V
+        if self.outer_query_values:
+            q = q.view(N, T, self.num_heads, self.query_dim, 1) # N, T, H, V, 1
+            h = w @ q # N, T, H, K, 1
+        else:
+            q = q.view(N, T, self.num_heads, 1, self.query_dim) # N, T, H, 1, K
+            h = q @ w # N, T, H, 1, V
+        return self.output(h.view(N, T, -1))
+
+
 class OuterProduct(nn.Module):
-    def __init__(self, *, dim, num_heads):
+    def __init__(self, *, dim, num_heads, outer_query_values=False):
         super().__init__()
         self.head_dim = dim // num_heads
         self.hidden = hidden = self.head_dim * num_heads
         self.num_heads = num_heads
         self.gates = nn.Linear(dim, 3 * hidden, bias=False)
         self.output = nn.Linear(hidden, dim)
+        self.outer_query_values = outer_query_values
 
         with torch.no_grad():
             self.gates.weight.normal_(std=dim**-0.5)
@@ -151,19 +195,23 @@ class OuterProduct(nn.Module):
 
     def forward(self, x):
         N, T, HD = x.shape
-        f, i, o = self.gates(x).chunk(3, dim=-1)
-        f = f.sigmoid()
-        f = f.view(N, T, self.num_heads, self.head_dim) # N, T, H, D
-        i = i.view(N, T, self.num_heads, self.head_dim) # N, T, H, D
-        update = (1 - f).unsqueeze(-1) * i.unsqueeze(-2) # N, T, H, D, D
-        update = update.view(N, T, -1)
-        f = f.repeat_interleave(self.head_dim, dim=-1).view(N, T, -1) # N, T, H, D*D
-        c = scan(f.mT.contiguous(), update.mT.contiguous()).mT
-        c = c.reshape(N, T, self.num_heads, self.head_dim, self.head_dim) # N, T, H, D, D
-        o = o.view(N, T, self.num_heads, self.head_dim, 1) # N, T, H, D
-        h = c @ o
-        x = self.output(h.view(N, T, HD))
-        return x
+        k, v, q = self.gates(x).chunk(3, dim=-1)
+        k = k.sigmoid()
+        k = k.view(N, T, self.num_heads, self.head_dim) # N, T, H, K
+        v = v.view(N, T, self.num_heads, self.head_dim) # N, T, H, V
+        kv_update = (1 - k).unsqueeze(-1) * v.unsqueeze(-2) # N, T, H, K, V
+        kv_update = kv_update.view(N, T, -1) # N, T, H*K*V
+        k = k.repeat_interleave(self.head_dim, dim=-1) # N, T, H, K*V
+        k = k.view(N, T, -1) # N, T, H*K*V
+        kv = scan(k.mT.contiguous(), kv_update.mT.contiguous()).mT
+        kv = kv.reshape(N, T, self.num_heads, self.head_dim, self.head_dim) # N, T, H, K, V
+        if self.outer_query_values:
+            q = q.view(N, T, self.num_heads, self.head_dim, 1) # N, T, H, V, 1
+            h = kv @ q
+        else:
+            q = q.view(N, T, self.num_heads, 1, self.head_dim) # N, T, H, 1, K
+            h = q @ kv
+        return self.output(h.view(N, T, HD))
 
 
 
@@ -267,8 +315,10 @@ class Block(nn.Module):
         match config.time_module:
             case 'TiedQuasiLSTM':
                 self.time = TiedQuasiLSTM(dim=config.dim, num_heads=config.tied_quasi_lstm_num_heads)
+            case 'AFWP':
+                self.time = AFWP(key_dim=config.dim, value_dim=config.dim, num_heads=config.tied_quasi_lstm_num_heads, outer_query_values=config.outer_query_values)
             case 'OuterProduct':
-                self.time = OuterProduct(dim=config.dim, num_heads=config.tied_quasi_lstm_num_heads)
+                self.time = OuterProduct(dim=config.dim, num_heads=config.tied_quasi_lstm_num_heads, outer_query_values=config.outer_query_values)
             case 'Hawk':
                 self.time = Hawk(dim=config.dim, expansion_factor=config.hawk_expansion_factor, conv_kernel_size=config.conv_kernel_size)
             case 'S6':
