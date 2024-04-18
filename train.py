@@ -38,7 +38,7 @@ parser.add_argument('--batch_size', type=int, default=32, help="batch size")
 parser.add_argument('--log_interval', type=int, default=100, help="log every n steps")
 parser.add_argument('--eval_interval', type=int, default=1000, help="evaluate every n steps")
 parser.add_argument('--anomaly', type=str, choices=['auto', 'active', 'ignore'], default='auto', help="when to detect and break on anomalies: auto (default) enables anomaly detection only when a nan gradient is detected, active enables anomaly detection for all steps, ignore disables anomaly detection.")
-parser.add_argument('--eval_accuracy_stop', type=float, default=0.99, help="stop training when evaluation accuracy exceeds this value")
+parser.add_argument('--eval_accuracy_stop', type=float, default=1.0, help="stop training when evaluation accuracy exceeds this value")
 
 device = 'cuda' # use CUDA_VISIBLE_DEVICES to choose the device until accelerated-scan supports cuda:N
 dtype = torch.bfloat16 # torch.float16
@@ -194,7 +194,7 @@ def train(model, tapes, opt, *, args):
             print(f'stopping: reached --until {args.until}')
             break
 
-        if eval_accuracy > args.eval_accuracy_stop:
+        if eval_accuracy >= args.eval_accuracy_stop:
             print(f'stopping: reached --eval_accuracy_stop {args.eval_accuracy_stop} criterion')
             break
 
