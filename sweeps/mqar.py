@@ -101,6 +101,10 @@ def run():
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0, dim=dim,
                                    time_module='TiedQuasiLSTM', tied_quasi_lstm_num_heads=32,
                                    conv_kernel_size=0, hawk_expansion_factor=1)
+        case ['outer', n, 'value']:
+            config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0, dim=dim,
+                                   time_module='OuterProduct', tied_quasi_lstm_num_heads=int(n),
+                                   conv_kernel_size=0, hawk_expansion_factor=1, outer_query_values=True)
         case ['outer', n]:
             config = GriffinConfig(vocab_size=vocab_size, num_layers=wandb.config.num_layers, smqa_head_dim=0, dim=dim,
                                    time_module='OuterProduct', tied_quasi_lstm_num_heads=int(n),
@@ -119,12 +123,12 @@ def run():
 
 
 sweep_configuration = {
-    "name": "mqar8kv_len64+outer+s6+lr",
+    "name": "mqar8kv_len64+outer+values+lr",
     "method": "grid",
     "metric": {"goal": "maximize", "name": "eval/accuracy"},
     "parameters": {
         #"model": {"values": ["hawk_noconv", "s6_dstate1", "s6_dstate4", "s6_dstate8", "s6_dstate16", "qlstm", "qlstm_tied8", "qlstm_tied16"]},
-        "model": {"values": ["outer_8", "outer_4", "s6_dstate8", "s6_dstate16"]},
+        "model": {"values": ["outer_8", "outer_8_value", "outer_4", "outer_4_value"]},
         #"dim": {"values": [64, 128, 256, 512]},
         "dim": {"values": [64]},
         "num_layers": {"values": [2]},
