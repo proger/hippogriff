@@ -125,6 +125,11 @@ def multiquery_ar(
 
 
 if __name__ == '__main__':
-    inputs, labels = multiquery_ar()
-    print(inputs[0])
-    print(labels[0])
+    vocab_size = 64
+    num_train_batches = 100_000 // 64
+    batch_size = 64
+    seq_len = 64
+    num_kv_pairs = 16
+    train_inputs, train_targets = multiquery_ar(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, power_a=0.01, num_kv_pairs=num_kv_pairs, random_non_queries=False)
+    print(train_inputs[0])
+    print(train_targets[0])
