@@ -21,13 +21,14 @@ def run():
     args.exp.mkdir(parents=True, exist_ok=True)
     args.lr = wandb.config.lr
 
-    vocab_size = 64
-    batch_size = 64
+    vocab_size = wandb.config.vocab_size
+    batch_size = wandb.config.batch_size
     num_train_batches = 100_000 // batch_size
     num_valid_batches = 3_000 // batch_size
-    seq_len = 64
-    train_inputs, train_targets = multiquery_ar(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, power_a=0.01, num_kv_pairs=8, random_non_queries=False)
-    valid_inputs, valid_targets = multiquery_ar(vocab_size=vocab_size, num_examples=num_valid_batches*batch_size, input_seq_len=seq_len, seed=43, power_a=0.01, num_kv_pairs=8, random_non_queries=False)
+    seq_len = wandb.config.seq_len
+    num_kv_pairs = wandb.config.num_kv_pairs
+    train_inputs, train_targets = multiquery_ar(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, power_a=0.01, num_kv_pairs=num_kv_pairs, random_non_queries=False)
+    valid_inputs, valid_targets = multiquery_ar(vocab_size=vocab_size, num_examples=num_valid_batches*batch_size, input_seq_len=seq_len, seed=43, power_a=0.01, num_kv_pairs=num_kv_pairs, random_non_queries=False)
 
     class Repeat:
         def __init__(self, xs):
@@ -123,16 +124,34 @@ def run():
 
 
 sweep_configuration = {
-    "name": "mqar8kv_len64+outer+values+lr",
+    "name": "mqar(8kv+16kv)*5(s6+outer+values)*4lr*3seeds",
     "method": "grid",
     "metric": {"goal": "maximize", "name": "eval/accuracy"},
     "parameters": {
         #"model": {"values": ["hawk_noconv", "s6_dstate1", "s6_dstate4", "s6_dstate8", "s6_dstate16", "qlstm", "qlstm_tied8", "qlstm_tied16"]},
-        "model": {"values": ["outer_8", "outer_8_value", "outer_4", "outer_4_value"]},
+        "model": {"values": [#"hawk_noconv",
+                             "s6_dstate1", # 64 state
+                             "s6_dstate2", # 128 state
+                             "s6_dstate4", # 256 state
+                             "s6_dstate8", # 512 state
+                             "s6_dstate16", # 1024 state
+                             "outer_64", "outer_64_value", # 64 state
+                             "outer_32", "outer_32_value", # 128 state
+                             "outer_16", "outer_16_value", # 256 state
+                             "outer_8", "outer_8_value", # 512 state
+                             "outer_4", "outer_4_value" # 1024 state
+                             ]},
+        #"model": {"values": ["outer_8", "outer_8_value", "outer_4", "outer_4_value"]},
         #"dim": {"values": [64, 128, 256, 512]},
         "dim": {"values": [64]},
         "num_layers": {"values": [2]},
         "lr": {"values": [2e-3, 1e-3, 3e-4, 1e-4]},
+        #"lr": {"values": [2e-3]},
+        "seed": [1,2,3],
+        "vocab_size": [64],
+        "batch_size": [64],
+        "seq_len": [64],
+        "num_kv_pairs": [8,16],
         #"lr": {"values": [1e-3]},
     },
 }
