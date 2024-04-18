@@ -41,7 +41,7 @@ parser.add_argument('--anomaly', type=str, choices=['auto', 'active', 'ignore'],
 parser.add_argument('--eval_accuracy_stop', type=float, default=1.0, help="stop training when evaluation accuracy exceeds this value")
 
 device = 'cuda' # use CUDA_VISIBLE_DEVICES to choose the device until accelerated-scan supports cuda:N
-dtype = torch.bfloat16 # torch.float16
+dtype = torch.float32 # torch.float16
 
 
 @torch.inference_mode()
