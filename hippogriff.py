@@ -363,7 +363,10 @@ class GriffinLM(nn.Module):
         ]
 
     def forward(self, input_ids):
+        N, T, *rest = input_ids.shape
         x = self.embedding(input_ids)
+        if rest:
+            x = x.sum(dim=tuple(range(2, 2+len(rest)))) # marginalize extra dimensions if present
         for block in self.backbone:
             x = block(x)
         x = self.lm_head(self.output_norm(x))
