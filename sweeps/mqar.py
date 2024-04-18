@@ -47,7 +47,7 @@ def run():
     )
     print('mqar: one epoch takes', len(tapes.train.xs), 'steps')
 
-    torch.manual_seed(1337)
+    torch.manual_seed(wandb.config.seed)
 
     dim = wandb.config.dim
     match wandb.config.model.split('_'):
@@ -147,12 +147,11 @@ sweep_configuration = {
         "num_layers": {"values": [2]},
         "lr": {"values": [2e-3, 1e-3, 3e-4, 1e-4]},
         #"lr": {"values": [2e-3]},
-        "seed": [1,2,3],
-        "vocab_size": [64],
-        "batch_size": [64],
-        "seq_len": [64],
-        "num_kv_pairs": [8,16],
-        #"lr": {"values": [1e-3]},
+        "seed": {"values": [1,2,3]},
+        "vocab_size": {"values":[64]},
+        "batch_size": {"values":[64]},
+        "seq_len": {"values":[64]},
+        "num_kv_pairs": {"values":[8,16]},
     },
 }
 
