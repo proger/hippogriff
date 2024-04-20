@@ -9,6 +9,8 @@
 # https://github.com/HazyResearch/zoology/blob/main/LICENSE.md
 #
 
+#%%
+
 import numpy as np
 import torch
 
@@ -124,12 +126,80 @@ def multiquery_ar(
     return inputs, labels
 
 
+def sequence_recall(
+    vocab_size: int = 64,
+    num_examples: int = 100_000,
+    input_seq_len: int = 64,
+    seed: int = 42,
+    random_keys: bool = False,
+    stacked: bool = True
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Generate synthetic data for the sequence recall task. In this task, the model is
+    given a sequence of tokens with their positional code (first half of the vocabulary)
+    and is asked to reproduce the sequence.
+    """
+    assert input_seq_len % 2 == 0, "input_seq_len must be even"
+
+    np.random.seed(seed)
+
+    context_size = input_seq_len // 4 - 1
+    key_choices = np.arange(4, vocab_size + 4) # 0 for pad, 1 for <s>, 2 for go, 3 for </s>
+    value_choices = np.arange(vocab_size + 4, vocab_size + 4 + vocab_size)
+
+    keys_unshuffled = np.tile(key_choices, (num_examples, 1))
+    if random_keys:
+        keys = np.apply_along_axis(np.random.choice, 1, keys_unshuffled, replace=False, size=context_size)
+    else:
+        keys = keys_unshuffled[:, :context_size]
+
+    values_unshuffled = np.tile(value_choices, (num_examples, 1))
+    values = np.apply_along_axis(np.random.choice, 1, values_unshuffled, replace=False, size=context_size)
+
+    # create sequences
+    examples = np.zeros((num_examples, input_seq_len), dtype=np.int64)
+    examples[:, 0] = 1
+    examples[:, 1] = 0
+    examples[:, 2+0:1+context_size*2:2] = keys
+    examples[:, 2+1:1+context_size*2+1:2] = values
+    examples[:, 2+context_size*2+0] = 2
+    examples[:, 2+context_size*2+1] = 0
+    examples[:, 2+context_size*2+2::2] = keys
+    examples[:, 2+context_size*2+3::2] = values
+
+    print(keys[0])
+    print(values[0])
+
+    labels = np.full((num_examples, input_seq_len+2), -100, dtype=np.int64)
+    labels[:, 2+context_size*2+2:-2:2] = values
+    labels[:, -2] = 3
+
+    print(examples[0], examples.shape, 'examples')
+    print(labels[0], labels.shape, 'labels')
+
+    if stacked:
+        inputs, labels = torch.tensor(examples[:, :]), torch.tensor(labels[:, 2:])
+        inputs = inputs.view(num_examples, input_seq_len//2, 2)[:, :, :]
+        labels = labels.view(num_examples, input_seq_len//2, 2)[..., 0][..., :]
+    else:
+        inputs, labels = torch.tensor(examples[:, :]), torch.tensor(labels[:, :])
+
+    return inputs, labels
+
+
 if __name__ == '__main__':
     vocab_size = 64
-    num_train_batches = 100_000 // 64
+    num_train_batches = 10
     batch_size = 64
-    seq_len = 64
-    num_kv_pairs = 16
-    train_inputs, train_targets = multiquery_ar(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, power_a=0.01, num_kv_pairs=num_kv_pairs, random_non_queries=False)
-    print(train_inputs[0])
-    print(train_targets[0])
+    seq_len = 32
+    train_inputs, train_targets = sequence_recall(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, random_keys=False)
+    x = torch.cat([train_inputs[0], train_targets[0][:, None]], dim=-1)
+    print(x)
+    print(x.shape)
+
+    train_inputs, train_targets = sequence_recall(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, random_keys=False, stacked=False)
+    x = torch.cat([train_inputs[0], train_targets[0]], dim=-1)
+    print(x)
+    print(x.shape)
+
+# %%
