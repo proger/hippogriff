@@ -144,8 +144,9 @@ def sequence_recall(
     np.random.seed(seed)
 
     context_size = input_seq_len // 4 - 1
-    key_choices = np.arange(4, vocab_size + 4) # 0 for pad, 1 for <s>, 2 for go, 3 for </s>
-    value_choices = np.arange(vocab_size + 4, vocab_size + 4 + vocab_size)
+    key_choices = np.arange(4, context_size + 4) # 0 for pad, 1 for <s>, 2 for go, 3 for </s>
+    total_vocab_size = vocab_size + context_size + 4
+    value_choices = np.arange(context_size + 4, total_vocab_size)
 
     keys_unshuffled = np.tile(key_choices, (num_examples, 1))
     if random_keys:
@@ -174,32 +175,32 @@ def sequence_recall(
     labels[:, 2+context_size*2+2:-2:2] = values
     labels[:, -2] = 3
 
-    print(examples[0], examples.shape, 'examples')
-    print(labels[0], labels.shape, 'labels')
+    #print(examples[0], examples.shape, 'examples')
+    #print(labels[0], labels.shape, 'labels')
+
+    inputs, labels = torch.tensor(examples[:, :]), torch.tensor(labels[:, 2:])
 
     if stacked:
-        inputs, labels = torch.tensor(examples[:, :]), torch.tensor(labels[:, 2:])
         inputs = inputs.view(num_examples, input_seq_len//2, 2)[:, :, :]
         labels = labels.view(num_examples, input_seq_len//2, 2)[..., 0][..., :]
-    else:
-        inputs, labels = torch.tensor(examples[:, :]), torch.tensor(labels[:, :])
 
-    return inputs, labels
+    return inputs, labels, total_vocab_size
 
 
 if __name__ == '__main__':
-    vocab_size = 64
+    vocab_size = 256
     num_train_batches = 10
     batch_size = 64
-    seq_len = 32
-    train_inputs, train_targets = sequence_recall(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, random_keys=False)
+    seq_len = 2048
+    train_inputs, train_targets, total_vocab_size  = sequence_recall(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, random_keys=False)
     x = torch.cat([train_inputs[0], train_targets[0][:, None]], dim=-1)
     print(x)
     print(x.shape)
 
-    train_inputs, train_targets = sequence_recall(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, random_keys=False, stacked=False)
+    train_inputs, train_targets, total_vocab_size = sequence_recall(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, random_keys=False, stacked=False)
     x = torch.cat([train_inputs[0], train_targets[0]], dim=-1)
     print(x)
     print(x.shape)
+    print(total_vocab_size, 'total_vocab_size')
 
 # %%
