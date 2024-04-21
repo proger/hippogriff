@@ -154,7 +154,7 @@ def sequence_recall(
         keys = keys_unshuffled[:, :context_size]
 
     values_unshuffled = np.tile(value_choices, (num_examples, 1))
-    values = np.apply_along_axis(np.random.choice, 1, values_unshuffled, replace=False, size=context_size)
+    values = np.apply_along_axis(np.random.choice, 1, values_unshuffled, replace=True, size=context_size)
 
     # create sequences
     examples = np.zeros((num_examples, input_seq_len), dtype=np.int64)
