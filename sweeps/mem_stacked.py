@@ -2,6 +2,7 @@
 How do different models perform on a task of recalling the whole sequence with positional encodings and without?
 """
 from pathlib import Path
+import os
 import torch
 import wandb
 
@@ -131,24 +132,26 @@ def run():
 
 
 sweep_configuration = {
-    "name": "mem",
+    "name": "mem:len=32-to-1024:vocab=256-to-8192:dim=64,128",
     "method": "grid",
     "metric": {"goal": "maximize", "name": "eval/accuracy"},
     "parameters": {
         "model": {"values": [
+            "s6_dstate8",
+            "s6_dstate16",
+            "s6_dstate32",
             "outer_8",
             "outer_4",
-            "s6_dstate8",
-            "s6_dstate16"
+            "outer_2",
         ]},
         #"dim": {"values": [64, 128, 256, 512]},
-        "dim": {"values": [64]},
+        "dim": {"values": [64,128]},
         "num_layers": {"values": [1]},
         "lr": {"values": [2e-3]},
-        "seed": {"values": [1]},
-        "vocab_size": {"values":[256]},
-        "seq_len": {"values":[32,64,128]},
+        "vocab_size": {"values":[256,512,1024,2048,4096,8192]},
+        "seq_len": {"values":[32,64,128,256,512]},
         "batch_size": {"values":[64]},
+        "seed": {"values": [1,2,3]},
     },
 }
 
