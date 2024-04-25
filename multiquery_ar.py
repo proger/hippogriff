@@ -160,7 +160,7 @@ def sequence_recall(
 
     permutation = np.tile(np.arange(context_size), (num_examples, 1))
     if permuted:
-        permutation = rng.permutation(permutation, axis=1)
+        permutation = rng.permuted(permutation, axis=1)
 
     # create sequences
     examples = np.zeros((num_examples, input_seq_len), dtype=np.int16)

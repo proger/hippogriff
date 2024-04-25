@@ -15,6 +15,7 @@ WANDB_PROJECT = 'hippogriff-mem-stacked'
 
 
 def make_sequence_recall_tapes(num_examples=100_000):
+    permuted = wandb.config.permuted
     vocab_size = wandb.config.vocab_size
     batch_size = wandb.config.batch_size
     seq_len = wandb.config.seq_len * 2 # double the sequence length due to stacking
@@ -22,23 +23,31 @@ def make_sequence_recall_tapes(num_examples=100_000):
     num_train_examples = num_train_batches*batch_size
     num_valid_batches = 3_000 // batch_size
     num_valid_examples = num_valid_batches*batch_size
-    valid_inputs, valid_targets, _ = sequence_recall(vocab_size=vocab_size, num_examples=num_valid_examples, input_seq_len=seq_len, seed=43, stacked=True, permuted=True)
-    train_inputs, train_targets, vocab_size = sequence_recall(vocab_size=vocab_size, num_examples=num_train_examples, input_seq_len=seq_len, seed=42, stacked=True, permuted=True)
+    valid_inputs, valid_targets, _ = sequence_recall(vocab_size=vocab_size, num_examples=num_valid_examples, input_seq_len=seq_len, seed=43, stacked=True, permuted=permuted)
+    train_inputs, train_targets, vocab_size = sequence_recall(vocab_size=vocab_size, num_examples=num_train_examples, input_seq_len=seq_len, seed=42, stacked=True, permuted=permuted)
 
     class Repeat:
-        def __init__(self, xs):
-            self.xs = xs
+        def __init__(self, inputs, targets, count=100000):
+            self.inputs = inputs
+            self.targets = targets
+            self.count = count
+
+        def __len__(self):
+            return len(self.inputs) * self.count
 
         def __getitem__(self, i):
-            return self.xs[i % len(self.xs)]
+            input, target = self.inputs[i % len(self.inputs)], self.targets[i % len(self.targets)]
+            return input.long(), target.long()
 
     tapes = Tapes(
         vocab_size=vocab_size,
         seq_len=seq_len,
-        train=Repeat([(input, target) for input, target in zip(train_inputs.view(num_train_batches, batch_size, -1, 2).to(device), train_targets.view(num_train_batches, batch_size, -1).to(device))]),
-        valid=[(input, target) for input, target in zip(valid_inputs.view(num_valid_batches, batch_size, -1, 2).to(device), valid_targets.view(num_valid_batches, batch_size, -1).to(device))],
+        train=Repeat(train_inputs.view(num_train_batches, batch_size, -1, 2).to(device),
+                     train_targets.view(num_train_batches, batch_size, -1).to(device)),
+        valid=Repeat(valid_inputs.view(num_valid_batches, batch_size, -1, 2).to(device),
+                     valid_targets.view(num_valid_batches, batch_size, -1).to(device), count=1),
     )
-    print('mem: one epoch takes', len(tapes.train.xs), 'steps')
+    print('mem: one epoch takes', num_train_batches, 'steps')
 
     i, t = tapes.train[0]
     print(i.shape, t.shape, 'train shapes')
