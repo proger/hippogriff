@@ -158,7 +158,7 @@ def sequence_recall(
     values = np.apply_along_axis(np.random.choice, 1, values_unshuffled, replace=True, size=context_size)
 
     # create sequences
-    examples = np.zeros((num_examples, input_seq_len), dtype=np.int64)
+    examples = np.zeros((num_examples, input_seq_len), dtype=np.int16)
     examples[:, 0] = 1
     examples[:, 1] = 0
     examples[:, 2+0:1+context_size*2:2] = keys
@@ -171,14 +171,14 @@ def sequence_recall(
     print(keys[0])
     print(values[0])
 
-    labels = np.full((num_examples, input_seq_len+2), -100, dtype=np.int64)
+    labels = np.full((num_examples, input_seq_len+2), -100, dtype=np.int16)
     labels[:, 2+context_size*2+2:-2:2] = values
     labels[:, -2] = 3
 
     #print(examples[0], examples.shape, 'examples')
     #print(labels[0], labels.shape, 'labels')
 
-    inputs, labels = torch.tensor(examples[:, :]), torch.tensor(labels[:, 2:])
+    inputs, labels = torch.from_numpy(examples[:, :]), torch.from_numpy(labels[:, 2:])
 
     if stacked:
         inputs = inputs.view(num_examples, input_seq_len//2, 2)[:, :, :]

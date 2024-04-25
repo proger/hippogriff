@@ -14,11 +14,11 @@ from multiquery_ar import sequence_recall
 WANDB_PROJECT = 'hippogriff-mem-stacked'
 
 
-def make_sequence_recall_tapes():
+def make_sequence_recall_tapes(num_examples=100_000):
     vocab_size = wandb.config.vocab_size
     batch_size = wandb.config.batch_size
     seq_len = wandb.config.seq_len * 2 # double the sequence length due to stacking
-    num_train_batches = 100_000 // batch_size
+    num_train_batches = num_examples // batch_size
     num_train_examples = num_train_batches*batch_size
     num_valid_batches = 3_000 // batch_size
     num_valid_examples = num_valid_batches*batch_size
@@ -54,8 +54,9 @@ def run():
     args.exp = Path(args.exp.substitute(**vars(args)))
     args.exp.mkdir(parents=True, exist_ok=True)
     args.lr = wandb.config.lr
+    args.steps = wandb.config.steps
 
-    tapes, vocab_size = make_sequence_recall_tapes()
+    tapes, vocab_size = make_sequence_recall_tapes(wandb.config.num_examples)
 
     torch.manual_seed(wandb.config.seed)
 
@@ -132,31 +133,37 @@ def run():
 
 
 sweep_configuration = {
-    "name": "mem:len=32-to-1024:vocab=256-to-8192:dim=64,128",
+    "name": "mem:len=64-512:vocab=1024,2048:dim=64:seeds3:100k",
     "method": "grid",
     "metric": {"goal": "maximize", "name": "eval/accuracy"},
     "parameters": {
         "model": {"values": [
-            "s6_dstate8",
-            "s6_dstate16",
-            "s6_dstate32",
+            #"s6_dstate8",
+            #"s6_dstate16",
+            #"s6_dstate32",
             "outer_8",
             "outer_4",
             "outer_2",
         ]},
-        #"dim": {"values": [64, 128, 256, 512]},
-        "dim": {"values": [64,128]},
+        "dim": {"values": [64]},
         "num_layers": {"values": [1]},
+        "num_examples": {"values": [100_000]},
         "lr": {"values": [2e-3]},
-        "vocab_size": {"values":[256,512,1024,2048,4096,8192]},
-        "seq_len": {"values":[32,64,128,256,512]},
+        "vocab_size": {"values":[1024,2048]},
+        "seq_len": {"values":[64,128,256,512]},
         "batch_size": {"values":[64]},
         "seed": {"values": [1,2,3]},
+        "steps": {"values": [100_000]},
     },
 }
 
-if __name__ == '__main__':
-    sweep_id = wandb.sweep(sweep=sweep_configuration, project=WANDB_PROJECT)
-    wandb.agent(sweep_id, function=run)
 
+if __name__ == '__main__':
+    sweep_id = os.environ.get('SWEEP_ID')
+    if not sweep_id:
+        sweep_id = wandb.sweep(sweep=sweep_configuration, project=WANDB_PROJECT)
+        print()
+        print(f'Now start the agent with env SWEEP_ID={sweep_id}')
+    else:
+        wandb.agent(sweep_id, function=run)
 
