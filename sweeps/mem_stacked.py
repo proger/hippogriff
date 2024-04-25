@@ -163,6 +163,7 @@ sweep_configuration = {
         "batch_size": {"values":[64]},
         "seed": {"values": [1,2,3]},
         "steps": {"values": [100_000]},
+        "permuted": {"values": [False, True]},
     },
 }
 
