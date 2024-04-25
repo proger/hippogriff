@@ -22,8 +22,8 @@ def make_sequence_recall_tapes(num_examples=100_000):
     num_train_examples = num_train_batches*batch_size
     num_valid_batches = 3_000 // batch_size
     num_valid_examples = num_valid_batches*batch_size
-    valid_inputs, valid_targets, _ = sequence_recall(vocab_size=vocab_size, num_examples=num_valid_examples, input_seq_len=seq_len, seed=43, stacked=True)
-    train_inputs, train_targets, vocab_size = sequence_recall(vocab_size=vocab_size, num_examples=num_train_examples, input_seq_len=seq_len, seed=42, stacked=True)
+    valid_inputs, valid_targets, _ = sequence_recall(vocab_size=vocab_size, num_examples=num_valid_examples, input_seq_len=seq_len, seed=43, stacked=True, permuted=True)
+    train_inputs, train_targets, vocab_size = sequence_recall(vocab_size=vocab_size, num_examples=num_train_examples, input_seq_len=seq_len, seed=42, stacked=True, permuted=True)
 
     class Repeat:
         def __init__(self, xs):
