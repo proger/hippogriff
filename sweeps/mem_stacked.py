@@ -149,7 +149,7 @@ sweep_configuration = {
         "num_layers": {"values": [1]},
         "num_examples": {"values": [100_000]},
         "lr": {"values": [2e-3]},
-        "vocab_size": {"values":[1024,2048]},
+        "vocab_size": {"values":[1024]},
         "seq_len": {"values":[64,128,256,512]},
         "batch_size": {"values":[64]},
         "seed": {"values": [1,2,3]},

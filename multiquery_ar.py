@@ -132,7 +132,8 @@ def sequence_recall(
     input_seq_len: int = 64,
     seed: int = 42,
     random_keys: bool = False,
-    stacked: bool = True
+    stacked: bool = True,
+    permuted: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Generate synthetic data for the sequence recall task. In this task, the model is
@@ -141,7 +142,7 @@ def sequence_recall(
     """
     assert input_seq_len % 2 == 0, "input_seq_len must be even"
 
-    np.random.seed(seed)
+    rng = np.random.default_rng(seed=seed)
 
     context_size = input_seq_len // 4 - 1
     key_choices = np.arange(4, context_size + 4) # 0 for pad, 1 for <s>, 2 for go, 3 for </s>
@@ -150,12 +151,16 @@ def sequence_recall(
 
     keys_unshuffled = np.tile(key_choices, (num_examples, 1))
     if random_keys:
-        keys = np.apply_along_axis(np.random.choice, 1, keys_unshuffled, replace=False, size=context_size)
+        keys = np.apply_along_axis(rng.choice, 1, keys_unshuffled, replace=False, size=context_size)
     else:
         keys = keys_unshuffled[:, :context_size]
 
     values_unshuffled = np.tile(value_choices, (num_examples, 1))
-    values = np.apply_along_axis(np.random.choice, 1, values_unshuffled, replace=True, size=context_size)
+    values = np.apply_along_axis(rng.choice, 1, values_unshuffled, replace=True, size=context_size)
+
+    permutation = np.tile(np.arange(context_size), (num_examples, 1))
+    if permuted:
+        permutation = rng.permutation(permutation, axis=1)
 
     # create sequences
     examples = np.zeros((num_examples, input_seq_len), dtype=np.int16)
@@ -163,20 +168,15 @@ def sequence_recall(
     examples[:, 1] = 0
     examples[:, 2+0:1+context_size*2:2] = keys
     examples[:, 2+1:1+context_size*2+1:2] = values
-    examples[:, 2+context_size*2+0] = 2
+    examples[:, 2+context_size*2+0:input_seq_len-2:2] = np.take_along_axis(keys, permutation, axis=1)
     examples[:, 2+context_size*2+1] = 0
-    examples[:, 2+context_size*2+2::2] = keys
-    examples[:, 2+context_size*2+3::2] = values
-
-    print(keys[0])
-    print(values[0])
+    # query teacher forcing: does not make sense when query is permuted
+    #examples[:, 2+context_size*2+3::2] = np.take_along_axis(values, permutation, axis=1)
+    examples[:, -2] = 2
 
     labels = np.full((num_examples, input_seq_len+2), -100, dtype=np.int16)
-    labels[:, 2+context_size*2+2:-2:2] = values
+    labels[:, 2+context_size*2+2:input_seq_len-1:2] = np.take_along_axis(values, permutation, axis=1)
     labels[:, -2] = 3
-
-    #print(examples[0], examples.shape, 'examples')
-    #print(labels[0], labels.shape, 'labels')
 
     inputs, labels = torch.from_numpy(examples[:, :]), torch.from_numpy(labels[:, 2:])
 
@@ -191,16 +191,14 @@ if __name__ == '__main__':
     vocab_size = 256
     num_train_batches = 10
     batch_size = 64
-    seq_len = 2048
-    train_inputs, train_targets, total_vocab_size  = sequence_recall(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, random_keys=False)
+    seq_len = 32
+    train_inputs, train_targets, total_vocab_size  = sequence_recall(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, random_keys=False, permuted=True)
     x = torch.cat([train_inputs[0], train_targets[0][:, None]], dim=-1)
+    print('keys values targets')
     print(x)
-    print(x.shape)
 
-    train_inputs, train_targets, total_vocab_size = sequence_recall(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, random_keys=False, stacked=False)
-    x = torch.cat([train_inputs[0], train_targets[0]], dim=-1)
-    print(x)
-    print(x.shape)
-    print(total_vocab_size, 'total_vocab_size')
-
-# %%
+    # train_inputs, train_targets, total_vocab_size = sequence_recall(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, random_keys=False, stacked=False)
+    # x = torch.cat([train_inputs[0], train_targets[0]], dim=-1)
+    # print(x)
+    # print(x.shape)
+    # print(total_vocab_size, 'total_vocab_size')
