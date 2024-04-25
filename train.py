@@ -50,7 +50,9 @@ def evaluate(model, batches, diag_prefix='eval') -> tuple[float, dict]:
     losses = []
     accuracy_sum, accuracy_count = 0, 0
     diag = {}
-    for i, (input_ids, targets) in enumerate(batches):
+    num_batches = len(batches)
+    for i in range(num_batches):
+        input_ids, targets = batches[i]
         with summarize_activations(model, infix=['input', 'output'], verbose=i==0) as batch_diag:
             with torch.amp.autocast(device_type='cuda', dtype=dtype):
             #with nullcontext():
@@ -62,14 +64,14 @@ def evaluate(model, batches, diag_prefix='eval') -> tuple[float, dict]:
             accuracy_sum, accuracy_count = outputs[mask].eq(targets[mask]).sum().item(), mask.sum().item()
 
             if i == 0:
-                print(' inputs[0]', *[str(x).ljust(3) if x != -100 else '  _' for x in input_ids[0].tolist()])
-                print('outputs[0]', *[str(x).ljust(3) if x != -100 else '  _' for x in outputs[0].tolist()])
-                print('targets[0]', *[str(x).ljust(3) if x != -100 else '  _' for x in targets[0].tolist()])
+                print(' inputs[0]', *[str(x).ljust(4) if x != -100 else '  _' for x in input_ids[0].tolist()])
+                print('outputs[0]', *[str(x).ljust(4) if x != -100 else '  _' for x in outputs[0].tolist()])
+                print('targets[0]', *[str(x).ljust(4) if x != -100 else '  _' for x in targets[0].tolist()])
                 diag.update(batch_diag)
         losses.append(loss.item())
         if i and i % 100 == 0:
             bpb = np.mean(losses) / np.log(2)
-            print(f'evaluation step {i}: bpb so far {bpb:.4f}')
+            print(f'{diag_prefix} step {i}/{num_batches}: bpb so far {bpb:.4f}')
     diag.update({
         f'{diag_prefix}/accuracy': accuracy_sum / accuracy_count,
         f'{diag_prefix}/loss': np.mean(losses),
