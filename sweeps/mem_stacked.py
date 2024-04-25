@@ -51,7 +51,7 @@ def run():
 
     # how to nicely merge args and wandb.config?
     args = parser.parse_args()
-    args.exp = Path(args.exp.substitute(**vars(args)))
+    args.exp = Path(args.exp.substitute(run_id=wandb.run.id, **vars(args)))
     args.exp.mkdir(parents=True, exist_ok=True)
     args.lr = wandb.config.lr
     args.steps = wandb.config.steps
