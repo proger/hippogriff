@@ -120,7 +120,7 @@ class TiedQuasiLSTM(nn.Module):
         self.head_dim = dim // num_heads
         self.hidden = hidden = self.head_dim * num_heads
         self.num_heads = num_heads
-        self.gates = nn.Linear(dim, num_heads + 3 * hidden, bias=False)
+        self.gates = nn.Linear(dim, num_heads + 3 * hidden, bias=True) # bias for the gates
         self.output = nn.Linear(hidden, dim)
 
         with torch.no_grad():
@@ -151,17 +151,20 @@ class AFWP(nn.Module):
         else:
             self.query_dim = key_dim
             self.hidden_dim = value_dim
-        self.gates = nn.Linear(model_dim, self.key_dim * num_heads + self.query_dim * num_heads, bias=False)
-        self.output = nn.Linear(self.hidden_dim * num_heads, model_dim)
+        self.key = nn.Linear(model_dim, self.key_dim * num_heads, bias=True) # bias for the gate
+        self.query = nn.Linear(model_dim, self.query_dim * num_heads, bias=False)
+        self.output = nn.Linear(self.hidden_dim * num_heads, model_dim, bias=False)
 
         with torch.no_grad():
-            self.gates.weight.normal_(std=model_dim**-0.5)
+            self.key.weight.normal_(std=model_dim**-0.5)
+            self.key.bias.uniform_(-4, 4)
+            self.query.weight.normal_(std=model_dim**-0.5)
             self.output.weight.normal_(std=(self.hidden_dim * num_heads)**-0.5)
 
     def forward(self, x):
         N, T, HV = x.shape
-        k, q = self.gates(x).split([self.key_dim * self.num_heads, self.query_dim * self.num_heads], dim=-1)
-        k = k.sigmoid()
+        q = self.query(x)
+        k = self.key(k).sigmoid()
         k = k.view(N, T, self.num_heads, -1) # N, T, H, K
         x = x.view(N, T, self.num_heads, -1) # N, T, H, V
         kv = k.unsqueeze(-1) * x.unsqueeze(-2) # outer product, N, T, H, K, V
@@ -185,18 +188,22 @@ class OuterProduct(nn.Module):
         self.head_dim = dim // num_heads
         self.hidden = hidden = self.head_dim * num_heads
         self.num_heads = num_heads
-        self.gates = nn.Linear(dim, 3 * hidden, bias=False)
+        self.key = nn.Linear(dim, hidden, bias=True) # bias for the gate
+        self.vq = nn.Linear(dim, 2 * hidden, bias=False)
+
         self.output = nn.Linear(hidden, dim)
         self.outer_query_values = outer_query_values
 
         with torch.no_grad():
-            self.gates.weight.normal_(std=dim**-0.5)
+            self.key.weight.normal_(std=dim**-0.5)
+            self.key.bias.uniform_(-4, 4)
+            self.vq.weight.normal_(std=dim**-0.5)
             self.output.weight.normal_(std=hidden**-0.5)
 
     def forward(self, x):
         N, T, HD = x.shape
-        k, v, q = self.gates(x).chunk(3, dim=-1)
-        k = k.sigmoid()
+        v, q = self.vq(x).chunk(2, dim=-1)
+        k = self.key(x).sigmoid()
         k = k.view(N, T, self.num_heads, self.head_dim) # N, T, H, K
         v = v.view(N, T, self.num_heads, self.head_dim) # N, T, H, V
         kv_update = (1 - k).unsqueeze(-1) * v.unsqueeze(-2) # N, T, H, K, V
