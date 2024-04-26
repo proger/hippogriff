@@ -145,9 +145,13 @@ def sequence_recall(
     rng = np.random.default_rng(seed=seed)
 
     context_size = input_seq_len // 4 - 1
-    key_choices = np.arange(4, context_size + 4) # 0 for pad, 1 for <s>, 2 for go, 3 for </s>
-    total_vocab_size = vocab_size + context_size + 4
-    value_choices = np.arange(context_size + 4, total_vocab_size)
+    if random_keys:
+        key_vocab_size = vocab_size # double the key space for keys
+    else:
+        key_vocab_size = context_size # just positions
+    key_choices = np.arange(4, key_vocab_size + 4) # 0 for pad, 1 for <s>, 2 for go, 3 for </s>
+    total_vocab_size = vocab_size + key_vocab_size + 4
+    value_choices = np.arange(key_vocab_size + 4, total_vocab_size)
 
     keys_unshuffled = np.tile(key_choices, (num_examples, 1))
     if random_keys:
@@ -189,10 +193,10 @@ def sequence_recall(
 
 if __name__ == '__main__':
     vocab_size = 256
-    num_train_batches = 10
     batch_size = 64
+    num_train_batches = 100_000 // batch_size
     seq_len = 32
-    train_inputs, train_targets, total_vocab_size  = sequence_recall(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, random_keys=False, permuted=True)
+    train_inputs, train_targets, total_vocab_size  = sequence_recall(vocab_size=vocab_size, num_examples=num_train_batches*batch_size, input_seq_len=seq_len, seed=42, random_keys=True, permuted=True)
     x = torch.cat([train_inputs[0], train_targets[0][:, None]], dim=-1)
     print('keys values targets')
     print(x)

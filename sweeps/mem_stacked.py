@@ -18,13 +18,14 @@ def make_sequence_recall_tapes(num_examples=100_000):
     permuted = wandb.config.permuted
     vocab_size = wandb.config.vocab_size
     batch_size = wandb.config.batch_size
+    random_keys = wandb.config.random_keys
     seq_len = wandb.config.seq_len * 2 # double the sequence length due to stacking
     num_train_batches = num_examples // batch_size
     num_train_examples = num_train_batches*batch_size
     num_valid_batches = 3_000 // batch_size
     num_valid_examples = num_valid_batches*batch_size
-    valid_inputs, valid_targets, _ = sequence_recall(vocab_size=vocab_size, num_examples=num_valid_examples, input_seq_len=seq_len, seed=43, stacked=True, permuted=permuted)
-    train_inputs, train_targets, vocab_size = sequence_recall(vocab_size=vocab_size, num_examples=num_train_examples, input_seq_len=seq_len, seed=42, stacked=True, permuted=permuted)
+    valid_inputs, valid_targets, _ = sequence_recall(vocab_size=vocab_size, num_examples=num_valid_examples, input_seq_len=seq_len, seed=43, stacked=True, random_keys=random_keys, permuted=permuted)
+    train_inputs, train_targets, vocab_size = sequence_recall(vocab_size=vocab_size, num_examples=num_train_examples, input_seq_len=seq_len, seed=42, stacked=True, random_keys=random_keys, permuted=permuted)
 
     class Repeat:
         def __init__(self, inputs, targets, count=100000):
@@ -164,6 +165,7 @@ sweep_configuration = {
         "seed": {"values": [1,2,3]},
         "steps": {"values": [100_000]},
         "permuted": {"values": [False, True]},
+        "random_keys": {"values": [False, True]},
     },
 }
 
